@@ -70,8 +70,7 @@ pub fn Sidebar(
                 button {
                     class: "btn btn-primary btn-full-width",
                     onclick: move |_| on_new_order.call(()),
-                    span { "+" }
-                    span { "New Order" }
+                    span { "+ New Order" }
                 }
             }
         }

@@ -77,7 +77,7 @@ pub fn OrderView(
                 div { class: "header-meta",
                     "Created {created_at}"
                     if is_creator {
-                        span { " · You are the creator" }
+                        span { style: "color: red", " Admin" }
                     }
                 }
             }
