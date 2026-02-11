@@ -60,6 +60,7 @@ pub fn Sidebar(
 
                 if is_empty {
                     div {
+                        style: "padding: 20px; text-align: center; color: rgba(255,255,255,0.5);",
                         "No orders yet"
                     }
                 }

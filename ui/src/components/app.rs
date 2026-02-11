@@ -6,6 +6,8 @@ use crate::services::{
 };
 use dioxus::prelude::*;
 
+const MAIN_CSS: &str = include_str!("../../assets/main.css");
+
 /// Main application component
 #[component]
 pub fn App() -> Element {
@@ -68,6 +70,7 @@ pub fn App() -> Element {
     };
 
     rsx! {
+        style { {MAIN_CSS} }
         div { class: "app-container",
             Sidebar {
                 app_state: app_state,
