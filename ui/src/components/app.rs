@@ -89,17 +89,6 @@ pub fn App() -> Element {
                     }
                 } else {
                     div { class: "empty-state",
-                        svg {
-                            xmlns: "http://www.w3.org/2000/svg",
-                            width: "80",
-                            height: "80",
-                            view_box: "0 0 24 24",
-                            fill: "none",
-                            stroke: "currentColor",
-                            stroke_width: "1.5",
-                            circle { cx: "12", cy: "12", r: "10" }
-                            path { d: "M8 12h8M12 8v8" }
-                        }
                         h3 { "No order selected" }
                         p { "Select an order from the sidebar or create a new one" }
                     }
