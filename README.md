@@ -31,6 +31,22 @@ pizza-freenet/
 
 ## Prerequisites
 
+### Option 1: Using Nix (Recommended)
+
+If you have [Nix](https://nixos.org/download.html) installed with flakes enabled:
+
+```bash
+# Enter development shell
+nix develop
+
+# Or with direnv (automatic)
+direnv allow
+```
+
+This provides all dependencies including Rust, Dioxus CLI, and WASM tools.
+
+### Option 2: Manual Installation
+
 - [Rust](https://rustup.rs/) (latest stable)
 - [Dioxus CLI](https://dioxuslabs.com/learn/0.6/getting_started) for running the UI
 
