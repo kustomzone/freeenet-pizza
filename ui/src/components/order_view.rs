@@ -113,9 +113,9 @@ pub fn OrderView(
                         }
                     },
                     if *show_invite_copied.read() {
-                        "Copied!"
+                        "Invite link copied!"
                     } else {
-                        "Invite"
+                        "Invite other users (will copy link)"
                     }
                 }
             }

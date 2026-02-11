@@ -8,6 +8,98 @@ use ed25519_dalek::{Signature, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+/// Serde helper for BTreeMap<UserIdKey, V> to serialize keys as hex strings for JSON compatibility
+mod user_id_map_serde {
+    use super::UserIdKey;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use std::collections::BTreeMap;
+
+    pub fn serialize<V, S>(map: &BTreeMap<UserIdKey, V>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        V: Serialize,
+        S: Serializer,
+    {
+        use serde::ser::SerializeMap;
+        let mut ser_map = serializer.serialize_map(Some(map.len()))?;
+        for (key, value) in map {
+            let hex_key: String = key.0.iter().map(|b| format!("{:02x}", b)).collect();
+            ser_map.serialize_entry(&hex_key, value)?;
+        }
+        ser_map.end()
+    }
+
+    pub fn deserialize<'de, V, D>(deserializer: D) -> Result<BTreeMap<UserIdKey, V>, D::Error>
+    where
+        V: Deserialize<'de>,
+        D: Deserializer<'de>,
+    {
+        let string_map: BTreeMap<String, V> = BTreeMap::deserialize(deserializer)?;
+        let mut result = BTreeMap::new();
+        for (hex_key, value) in string_map {
+            let bytes = hex_to_bytes(&hex_key).map_err(serde::de::Error::custom)?;
+            result.insert(UserIdKey(bytes), value);
+        }
+        Ok(result)
+    }
+
+    fn hex_to_bytes(hex: &str) -> Result<[u8; 32], String> {
+        if hex.len() != 64 {
+            return Err(format!("Invalid hex length: expected 64, got {}", hex.len()));
+        }
+        let mut bytes = [0u8; 32];
+        for (i, byte) in bytes.iter_mut().enumerate() {
+            *byte = u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16)
+                .map_err(|e| format!("Invalid hex: {}", e))?;
+        }
+        Ok(bytes)
+    }
+}
+
+/// Serde helper for BTreeMap<UserIdKey, u64> (used in summaries)
+mod user_id_version_map_serde {
+    use super::UserIdKey;
+    use serde::{Deserialize, Deserializer, Serializer};
+    use std::collections::BTreeMap;
+
+    pub fn serialize<S>(map: &BTreeMap<UserIdKey, u64>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        use serde::ser::SerializeMap;
+        let mut ser_map = serializer.serialize_map(Some(map.len()))?;
+        for (key, value) in map {
+            let hex_key: String = key.0.iter().map(|b| format!("{:02x}", b)).collect();
+            ser_map.serialize_entry(&hex_key, value)?;
+        }
+        ser_map.end()
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<BTreeMap<UserIdKey, u64>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let string_map: BTreeMap<String, u64> = BTreeMap::deserialize(deserializer)?;
+        let mut result = BTreeMap::new();
+        for (hex_key, value) in string_map {
+            let bytes = hex_to_bytes(&hex_key).map_err(serde::de::Error::custom)?;
+            result.insert(UserIdKey(bytes), value);
+        }
+        Ok(result)
+    }
+
+    fn hex_to_bytes(hex: &str) -> Result<[u8; 32], String> {
+        if hex.len() != 64 {
+            return Err(format!("Invalid hex length: expected 64, got {}", hex.len()));
+        }
+        let mut bytes = [0u8; 32];
+        for (i, byte) in bytes.iter_mut().enumerate() {
+            *byte = u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16)
+                .map_err(|e| format!("Invalid hex: {}", e))?;
+        }
+        Ok(bytes)
+    }
+}
+
 /// Trait for composable state components that support CRDT-like synchronization.
 ///
 /// Each component must be able to:
@@ -86,6 +178,7 @@ pub struct OrderConfiguration {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct OrderItems {
     /// Map from user ID (serialized) to their order item
+    #[serde(with = "user_id_map_serde")]
     pub items: BTreeMap<UserIdKey, OrderItem>,
 }
 
@@ -142,6 +235,7 @@ pub struct OrderConfigSummary {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct OrderItemsSummary {
     /// Map of user ID to item version
+    #[serde(with = "user_id_version_map_serde")]
     pub item_versions: BTreeMap<UserIdKey, u64>,
 }
 
@@ -166,6 +260,7 @@ pub struct OrderConfigDelta {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct OrderItemsDelta {
     /// New or updated items
+    #[serde(with = "user_id_map_serde")]
     pub upserts: BTreeMap<UserIdKey, OrderItem>,
     /// Deleted items (just track the keys)
     pub deletions: Vec<UserIdKey>,
@@ -512,5 +607,97 @@ impl PizzaOrderState {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ed25519_dalek::{Signer, SigningKey};
+
+    #[test]
+    fn test_order_item_json_roundtrip() {
+        // Create a signing key
+        let signing_key = SigningKey::from_bytes(&[1u8; 32]);
+        let user_id = UserIdKey::from(&signing_key.verifying_key());
+
+        // Create an order item
+        let mut item = OrderItem {
+            display_name: "Test User".to_string(),
+            order: "1x Margherita".to_string(),
+            price_cents: 1200,
+            paid: false,
+            version: 1,
+            signature: signing_key.sign(b"test"), // placeholder
+            signed_by: user_id.clone(),
+        };
+
+        // Sign it properly
+        let message = item.signing_message(&user_id);
+        item.signature = signing_key.sign(&message);
+
+        // Serialize to JSON
+        let json = serde_json::to_string(&item).expect("Failed to serialize");
+
+        // Deserialize from JSON
+        let deserialized: OrderItem =
+            serde_json::from_str(&json).expect("Failed to deserialize");
+
+        // Verify round-trip
+        assert_eq!(item.display_name, deserialized.display_name);
+        assert_eq!(item.order, deserialized.order);
+        assert_eq!(item.price_cents, deserialized.price_cents);
+        assert_eq!(item.paid, deserialized.paid);
+        assert_eq!(item.version, deserialized.version);
+        assert_eq!(item.signature, deserialized.signature);
+        assert_eq!(item.signed_by, deserialized.signed_by);
+    }
+
+    #[test]
+    fn test_pizza_order_state_json_roundtrip() {
+        let signing_key = SigningKey::from_bytes(&[1u8; 32]);
+        let user_id = UserIdKey::from(&signing_key.verifying_key());
+
+        // Create configuration
+        let mut config = OrderConfiguration {
+            name: "Test Order".to_string(),
+            created_at: Some(chrono::Utc::now()),
+            version: 1,
+            signature: None,
+        };
+        let config_msg = config.signing_message();
+        config.signature = Some(signing_key.sign(&config_msg));
+
+        // Create an item
+        let mut item = OrderItem {
+            display_name: "Alice".to_string(),
+            order: "2x Pepperoni".to_string(),
+            price_cents: 2400,
+            paid: false,
+            version: 1,
+            signature: signing_key.sign(b"placeholder"),
+            signed_by: user_id.clone(),
+        };
+        let item_msg = item.signing_message(&user_id);
+        item.signature = signing_key.sign(&item_msg);
+
+        // Create state with items
+        let mut state = PizzaOrderState {
+            config,
+            items: OrderItems::default(),
+        };
+        state.items.items.insert(user_id, item);
+
+        // Serialize to JSON
+        let json = serde_json::to_string(&state).expect("Failed to serialize state");
+
+        // Deserialize from JSON
+        let deserialized: PizzaOrderState =
+            serde_json::from_str(&json).expect("Failed to deserialize state");
+
+        // Verify round-trip
+        assert_eq!(state.config.name, deserialized.config.name);
+        assert_eq!(state.config.version, deserialized.config.version);
+        assert_eq!(state.items.items.len(), deserialized.items.items.len());
     }
 }

@@ -2208,6 +2208,7 @@ dependencies = [
  "ciborium",
  "ed25519-dalek",
  "serde",
+ "serde_json",
  "thiserror 1.0.69",
 ]
 
