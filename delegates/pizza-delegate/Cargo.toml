@@ -1,0 +1,15 @@
+[package]
+name = "pizza-delegate"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pizza-common = { path = "../../common" }
+freenet-stdlib = { workspace = true, features = ["delegate"] }
+serde.workspace = true
+ciborium.workspace = true
+ed25519-dalek.workspace = true
+thiserror.workspace = true

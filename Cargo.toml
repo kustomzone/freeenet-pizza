@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "common",
     "contracts/pizza-contract",
+    "ui",
 ]
 
 [workspace.package]

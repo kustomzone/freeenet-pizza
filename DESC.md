@@ -27,4 +27,16 @@ Updates:
   - edit_item { display_name?, order?, price? } -> edit entry in items
   - delete_item { } -> delete entryy in items
 
+# Frontend
+
+- Side-bar with already created and subscribed pizza-contracts
+- Button "Add Order" -> create new pizza contract
+  - Creates Dialog with:
+    - Textbox, name: Order name
+    - Button "Create", runs create_order operation
+- View for existing pizza contracts
+  - List of all items, showing display_name and order and paid and price in a table
+    - Use checkmark for paid
+    - Paid can be clicked if the user signed in is the contract creator, runs update_paid operation
+
 

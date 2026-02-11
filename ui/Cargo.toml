@@ -1,0 +1,47 @@
+[package]
+name = "pizza-ui"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+pizza-common = { path = "../common" }
+
+# UI Framework
+dioxus = { version = "0.6", features = ["web"] }
+dioxus-free-icons = { version = "0.9", features = ["font-awesome-solid", "font-awesome-regular"] }
+
+# Async
+futures = "0.3"
+wasm-bindgen-futures = "0.4"
+
+# Web
+web-sys = { version = "0.3", features = [
+    "Window",
+    "Document",
+    "Storage",
+    "console",
+    "Crypto",
+    "Navigator",
+    "Clipboard",
+] }
+wasm-bindgen = "0.2"
+js-sys = "0.3"
+
+# Serialization
+serde.workspace = true
+serde_json = "1"
+ciborium.workspace = true
+
+# Crypto
+ed25519-dalek.workspace = true
+rand = { version = "0.8", features = ["getrandom"] }
+getrandom = { version = "0.2", features = ["js"] }
+
+# Time
+chrono.workspace = true
+
+# Utils
+thiserror.workspace = true
+log = "0.4"
+console_log = "1"
+console_error_panic_hook = "0.1"
