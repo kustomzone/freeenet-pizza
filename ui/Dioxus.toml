@@ -9,5 +9,8 @@ title = "Pizza Order Manager"
 reload_html = true
 watch_path = ["src"]
 
-[web.resource]
+[web.resource.dev]
+style = ["assets/main.css"]
+
+[web.resource.release]
 style = ["assets/main.css"]
