@@ -1,0 +1,11 @@
+[package]
+name = "pizza-common"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde.workspace = true
+ciborium.workspace = true
+ed25519-dalek.workspace = true
+chrono.workspace = true
+thiserror.workspace = true

@@ -1,0 +1,26 @@
+[package]
+name = "pizza-contract"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pizza-common = { path = "../../common" }
+freenet-stdlib = { workspace = true, features = ["contract"] }
+serde.workspace = true
+ciborium.workspace = true
+ed25519-dalek.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+rand = "0.8"
+
+[dev-dependencies]
+rand = "0.8"
+
+[profile.release]
+lto = true
+opt-level = "z"
+codegen-units = 1
+strip = true
