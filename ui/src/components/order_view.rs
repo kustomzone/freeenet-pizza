@@ -2,7 +2,7 @@
 //!
 //! Displays the details of a pizza order including all items in a table.
 
-use crate::services::{AppState, UserIdentity};
+use crate::services::{AppState, PizzaInvite, UserIdentity};
 use dioxus::prelude::*;
 
 #[component]
@@ -17,6 +17,7 @@ pub fn OrderView(
     let mut price_input = use_signal(|| String::new());
     let mut show_add_form = use_signal(|| false);
     let mut edit_mode = use_signal(|| false);
+    let mut show_invite_copied = use_signal(|| false);
 
     let state = app_state.read();
     let order = match state.get_order(&order_id) {
@@ -69,6 +70,8 @@ pub fn OrderView(
     let order_id_for_add = order_id.clone();
     let order_id_for_edit = order_id.clone();
     let order_id_for_delete = order_id.clone();
+    let order_id_for_invite = order_id.clone();
+    let order_name_for_invite = order_name.clone();
 
     rsx! {
         div { class: "content-header",
@@ -78,6 +81,41 @@ pub fn OrderView(
                     "Created {created_at}"
                     if is_creator {
                         span { style: "color: red", " Admin" }
+                    }
+                }
+            }
+            div { class: "header-actions",
+                button {
+                    class: "btn btn-secondary",
+                    onclick: {
+                        let order_id = order_id_for_invite.clone();
+                        let order_name = order_name_for_invite.clone();
+                        move |_| {
+                            let invite = PizzaInvite::new(
+                                order_id.clone(),
+                                order_name.clone(),
+                                "Someone".to_string(),
+                            );
+                            let link = invite.to_link();
+
+                            // Copy to clipboard
+                            if let Some(window) = web_sys::window() {
+                                let clipboard = window.navigator().clipboard();
+                                let _ = clipboard.write_text(&link);
+                                show_invite_copied.set(true);
+
+                                // Reset after 2 seconds
+                                wasm_bindgen_futures::spawn_local(async move {
+                                    gloo_timers::future::TimeoutFuture::new(2000).await;
+                                    show_invite_copied.set(false);
+                                });
+                            }
+                        }
+                    },
+                    if *show_invite_copied.read() {
+                        "Copied!"
+                    } else {
+                        "Invite"
                     }
                 }
             }

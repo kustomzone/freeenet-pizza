@@ -3,6 +3,7 @@
 //! Manages pizza orders and synchronizes with Freenet contracts.
 //! Currently uses local storage as a mock backend.
 
+use crate::services::PizzaInvite;
 use chrono::Utc;
 use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
 use pizza_common::{
@@ -116,6 +117,44 @@ impl AppState {
         self.orders.insert(id.clone(), order);
         self.save();
         id
+    }
+
+    /// Create an order from an invite (joining an existing order)
+    pub fn create_order_from_invite(&mut self, invite: &PizzaInvite, _user_key: &SigningKey) {
+        // In a real Freenet implementation, this would:
+        // 1. Subscribe to the contract using the order_id
+        // 2. Fetch the current state from the network
+        // For now, we create a placeholder order
+
+        // Use the invite's order_id directly
+        let order_id = invite.order_id.clone();
+
+        // Create a placeholder - in production this would be fetched from network
+        let params = PizzaOrderParametersSerde {
+            creator: [0u8; 32], // Unknown creator - would be fetched from contract
+            order_id: [0u8; 32],
+        };
+
+        let config = OrderConfiguration {
+            name: invite.order_name.clone(),
+            created_at: Some(Utc::now()),
+            version: 1,
+            signature: None, // Would be fetched from contract
+        };
+
+        let state = PizzaOrderState {
+            config,
+            items: OrderItems::default(),
+        };
+
+        let order = PizzaOrder {
+            id: order_id.clone(),
+            params,
+            state,
+        };
+
+        self.orders.insert(order_id, order);
+        self.save();
     }
 
     /// Add an item to an order
