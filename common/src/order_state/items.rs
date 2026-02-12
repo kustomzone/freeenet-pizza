@@ -6,9 +6,7 @@ use ed25519_dalek::{Signature, SigningKey, VerifyingKey};
 use freenet_scaffold::util::{fast_hash, FastHash};
 use freenet_scaffold::ComposableState;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::fmt;
-use std::time::SystemTime;
 use crate::order_state::items::ItemContentV1::Item;
 
 pub const MAX_SUB_ELEMENTS: usize = 100;
@@ -77,6 +75,39 @@ impl ComposableState for ItemsV1 {
         parameters: &Self::Parameters,
         delta: &Option<Self::Delta>,
     ) -> Result<(), String> {
+        if let Some(delta) = delta {
+            let mut items_c = self.items.clone();
+
+            for incoming in delta {
+                // Validate signature against appropriate key
+                let verifying_key = if incoming.item.owner_sign {
+                    &parameters.owner
+                } else {
+                    &incoming.item.signed_by
+                };
+                if incoming.validate(verifying_key).is_err() {
+                    return Err(format!("Invalid item signature: id:{:?}", incoming.id()));
+                }
+
+                // Find existing item from the same signer (signed_by)
+                if let Some(pos) = self
+                    .items
+                    .iter()
+                    .position(|it| it.item.signed_by == incoming.item.signed_by)
+                {
+                    // Replace if incoming version is newer
+                    if incoming.item.version > items_c[pos].item.version {
+                        items_c[pos] = incoming.clone();
+                    }
+                } else {
+                    // No existing item for this signer – insert
+                    items_c.push(incoming.clone());
+                }
+            }
+
+            self.items = items_c
+        }
+
         /*let max_recent_messages = parent_state.configuration.configuration.max_recent_messages;
         let max_message_size = parent_state.configuration.configuration.max_message_size;
         let privacy_mode = &parent_state.configuration.configuration.privacy_mode;
@@ -650,6 +681,7 @@ pub struct ItemV1 {
     /// Who signed this version (owner or creator)
     pub signed_by: VerifyingKey,
     pub owner_sign: bool,
+    pub version: u64,
     pub content: ItemContentV1,
 }
 
@@ -672,6 +704,7 @@ impl Default for ItemV1 {
         Self {
             signed_by: Default::default(),
             owner_sign: false,
+            version: 0,
             content: {
                 Item {
                     display_name: "".to_string(),
@@ -736,9 +769,76 @@ impl AuthorizedItemV1 {
     }
 }
 
-/*
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use chrono::Utc;
+    use ed25519_dalek::SigningKey;
+    use rand::rngs::OsRng;
+
+    #[test]
+    fn test_apply_delta_version_replacement() {
+        let mut rng = OsRng;
+        let owner_signing_key = SigningKey::generate(&mut rng);
+        let owner_verifying_key = owner_signing_key.verifying_key();
+
+        let user_signing_key = SigningKey::generate(&mut rng);
+        let user_id = user_signing_key.verifying_key();
+
+        let parameters = OrderParametersV1 {
+            owner: owner_verifying_key,
+            created_at: Utc::now(),
+        };
+        let parent_state = FullOrderStateV1::default();
+
+        let mut items_state = ItemsV1::default();
+
+        // 1. Initial item (version 1)
+        let item_v1 = ItemV1 {
+            signed_by: user_id,
+            owner_sign: false,
+            version: 1,
+            content: ItemContentV1::Item {
+                display_name: "User".to_string(),
+                order: "Pizza V1".to_string(),
+                price_cents: 1000,
+            },
+        };
+        let auth_item_v1 = AuthorizedItemV1::new(item_v1, &user_signing_key);
+        items_state.apply_delta(&parent_state, &parameters, &Some(vec![auth_item_v1.clone()])).unwrap();
+
+        assert_eq!(items_state.items.len(), 1);
+        assert_eq!(items_state.items[0].item.version, 1);
+
+        // 2. Apply item with version 2 (should replace)
+        let item_v2 = ItemV1 {
+            signed_by: user_id,
+            owner_sign: false,
+            version: 2,
+            content: ItemContentV1::Item {
+                display_name: "User".to_string(),
+                order: "Pizza V2".to_string(),
+                price_cents: 1200,
+            },
+        };
+        let auth_item_v2 = AuthorizedItemV1::new(item_v2, &user_signing_key);
+        items_state.apply_delta(&parent_state, &parameters, &Some(vec![auth_item_v2.clone()])).unwrap();
+
+        assert_eq!(items_state.items.len(), 1);
+        assert_eq!(items_state.items[0].item.version, 2);
+        if let ItemContentV1::Item { order, .. } = &items_state.items[0].item.content {
+            assert_eq!(order, "Pizza V2");
+        } else {
+            panic!("Wrong content type");
+        }
+
+        // 3. Apply item with version 1 again (should NOT replace)
+        items_state.apply_delta(&parent_state, &parameters, &Some(vec![auth_item_v1])).unwrap();
+        assert_eq!(items_state.items.len(), 1);
+        assert_eq!(items_state.items[0].item.version, 2);
+    }
+}
+/*
     use super::*;
     use ed25519_dalek::{Signer, SigningKey};
     use rand::rngs::OsRng;

@@ -227,6 +227,7 @@ mod tests {
         let item = ItemV1 {
             signed_by: user_id,
             owner_sign: false,
+            version: 1,
             content: ItemContentV1::Item {
                 display_name: "Test".to_string(),
                 order: "Pizza".to_string(),
