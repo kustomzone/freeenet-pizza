@@ -1,6 +1,7 @@
 mod order;
 mod items;
 mod version;
+mod paid;
 
 use chrono::{DateTime, Utc};
 use crate::order_state::order::AuthorizedOrderV1;
@@ -10,6 +11,7 @@ use crate::order_state::version::StateVersion;
 use ed25519_dalek::VerifyingKey;
 use freenet_scaffold_macro::composable;
 use serde::{Deserialize, Serialize};
+use crate::order_state::paid::AuthorizedPaidV1;
 
 #[composable]
 #[derive(Serialize, Deserialize, Clone, Default, PartialEq, Debug)]
@@ -17,6 +19,7 @@ pub struct FullOrderStateV1 {
     pub order: AuthorizedOrderV1,
 
     pub items: ItemsV1,
+    pub paid: AuthorizedPaidV1,
 
     /// State format version for migration compatibility.
     /// Defaults to 0 for backward compatibility with states created before versioning.
@@ -36,10 +39,11 @@ mod tests {
     use crate::order_state::order::Order;
     use ed25519_dalek::SigningKey;
     use std::fmt::Debug;
+    use crate::order_state::paid::{AuthorizedPaidV1, Paid};
 
     #[test]
     fn test_state() {
-        let (state, parameters, owner_signing_key) = create_empty_chat_room_state();
+        let (state, parameters, owner_signing_key) = create_empty_order_state();
 
         assert!(
             state.verify(&state, &parameters).is_ok(),
@@ -93,7 +97,7 @@ mod tests {
 
         assert_eq!(new_state, modified_state);
     }
-    fn create_empty_chat_room_state() -> (FullOrderStateV1, OrderParametersV1, SigningKey) {
+    fn create_empty_order_state() -> (FullOrderStateV1, OrderParametersV1, SigningKey) {
         // Create a test room_state with a single member and two messages, one written by
         // the owner and one by the member - the member must be invited by the owner
         let rng = &mut rand::thread_rng();
@@ -101,11 +105,13 @@ mod tests {
         let owner_verifying_key = owner_signing_key.verifying_key();
 
         let order = AuthorizedOrderV1::new(Order::default(), &owner_signing_key);
+        let paid = AuthorizedPaidV1::new(Paid::default(), &owner_signing_key);
 
         (
             FullOrderStateV1 {
                 order: order,
                 items: ItemsV1::default(),
+                paid: paid,
                 ..Default::default()
             },
             OrderParametersV1 {

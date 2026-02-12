@@ -1,7 +1,7 @@
 use crate::order_state::OrderParametersV1;
 use crate::util::sign_struct;
 use crate::util::{truncated_base64, verify_struct};
-use crate::{FullOrderStateV1, UserId};
+use crate::{FullOrderStateV1, UserId, UserIdKey};
 use ed25519_dalek::{Signature, SigningKey, VerifyingKey};
 use freenet_scaffold::util::{fast_hash, FastHash};
 use freenet_scaffold::ComposableState;
@@ -9,23 +9,13 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use std::time::SystemTime;
+use crate::order_state::items::ItemContentV1::Item;
 
-/// Computed state for message actions (edits, deletes, reactions)
-/// This is rebuilt from action messages and not serialized
-#[derive(Clone, PartialEq, Debug, Default)]
-pub struct MessageActionsState {
-    /// Messages that have been edited: message_id -> new text content
-    pub edited_content: HashMap<u32, String>,
-    /// Messages that have been deleted
-    pub deleted: std::collections::HashSet<u32>,
-}
+pub const MAX_SUB_ELEMENTS: usize = 100;
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug, Default)]
 pub struct ItemsV1 {
     pub items: Vec<AuthorizedItemV1>,
-    /// Computed state from action messages (not serialized - rebuilt on each delta)
-    #[serde(skip)]
-    pub actions_state: MessageActionsState,
 }
 
 impl ComposableState for ItemsV1 {
@@ -39,6 +29,14 @@ impl ComposableState for ItemsV1 {
         parent_state: &Self::ParentState,
         parameters: &Self::Parameters,
     ) -> Result<(), String> {
+        for item in &self.items {
+            let verifying_key = if item.item.owner_sign {
+                &parameters.owner
+            } else {
+                &item.item.signed_by
+            };
+
+        }
         /*for message in &self.items {
             let verifying_key = if message.item.author == owner_id {
                 // Owner's messages are validated against the owner's key
@@ -664,19 +662,38 @@ impl fmt::Display for ItemActionBody {
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct ItemV1 {
-    /*pub room_owner: MemberId,
-    pub author: MemberId,
-    pub time: SystemTime,
-    pub content: ItemActionBody,*/
+    /// Who signed this version (owner or creator)
+    pub signed_by: VerifyingKey,
+    pub owner_sign: bool,
+    pub content: ItemContentV1,
+}
+
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum ItemContentV1 {
+    Item {
+        /// User's display name for this order
+        display_name: String,
+        /// Description of what they're ordering (e.g., "2x Margherita")
+        order: String,
+        /// Price in cents (to avoid floating point issues)
+        price_cents: u64,
+    },
+    Deleted {
+    }
 }
 
 impl Default for ItemV1 {
     fn default() -> Self {
         Self {
-            /*room_owner: MemberId(FastHash(0)),
-            author: MemberId(FastHash(0)),
-            time: SystemTime::UNIX_EPOCH,
-            content: ItemActionBody::public(String::new()),*/
+            signed_by: Default::default(),
+            owner_sign: false,
+            content: {
+                Item {
+                    display_name: "".to_string(),
+                    order: "".to_string(),
+                    price_cents: 0,
+                }
+            },
         }
     }
 }
