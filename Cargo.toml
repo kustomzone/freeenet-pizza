@@ -11,9 +11,6 @@ version = "0.1.0"
 edition = "2021"
 
 [workspace.dependencies]
-# Freenet
-freenet-stdlib = "0.1"
-
 # Serialization
 serde = { version = "1", features = ["derive"] }
 ciborium = "0.2"
@@ -27,3 +24,8 @@ chrono = { version = "0.4", features = ["serde"] }
 
 # Utils
 thiserror = "1"
+
+# Freenet dependencies
+freenet-scaffold = "0.2.1"
+freenet-scaffold-macro = "0.2.1"
+freenet-stdlib = { version = "0.1.35", features = ["contract"] }

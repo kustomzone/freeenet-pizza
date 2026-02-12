@@ -56,7 +56,7 @@ impl ContractInterface for PizzaContract {
 
                     // Merge states (commutative operation)
                     pizza_state
-                        .merge(&other, &params)
+                        .merge(&(), &params, &other)
                         .map_err(|_| ContractError::InvalidState)?;
                 }
                 UpdateData::Delta(delta) => {
@@ -225,10 +225,10 @@ mod tests {
 
         // Merge in both orders
         let mut merge_ab = state_a.clone();
-        merge_ab.merge(&state_b, &params).unwrap();
+        merge_ab.merge(&(), &params, &state_b).unwrap();
 
         let mut merge_ba = state_b.clone();
-        merge_ba.merge(&state_a, &params).unwrap();
+        merge_ba.merge(&(), &params, &state_a).unwrap();
 
         // Both should have the same result
         assert_eq!(merge_ab.items.items.len(), 2);

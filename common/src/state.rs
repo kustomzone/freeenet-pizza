@@ -8,6 +8,8 @@ use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+use freenet_scaffold::ComposableState;
+
 /// Serde helper for BTreeMap<UserIdKey, V> to serialize keys as hex strings for JSON compatibility
 mod user_id_map_serde {
     use super::UserIdKey;
@@ -98,58 +100,6 @@ mod user_id_version_map_serde {
         }
         Ok(bytes)
     }
-}
-
-/// Trait for composable state components that support CRDT-like synchronization.
-///
-/// Each component must be able to:
-/// - Verify its own validity
-/// - Generate a compact summary
-/// - Compute deltas against a summary
-/// - Apply deltas from other peers
-/// - Apply operations to modify state
-pub trait ComposableState {
-    /// Parent state that this component depends on
-    type ParentState;
-    /// Compact summary for sync negotiation
-    type Summary;
-    /// Delta/patch that can be applied
-    type Delta;
-    /// Parameters for validation
-    type Parameters;
-    /// Operation type for modifying this state
-    type Operation;
-
-    /// Verify the component is valid
-    fn verify(&self, parent: &Self::ParentState, params: &Self::Parameters) -> Result<(), String>;
-
-    /// Generate a compact summary of current state
-    fn summarize(&self, parent: &Self::ParentState, params: &Self::Parameters) -> Self::Summary;
-
-    /// Compute what the remote is missing (delta from their summary)
-    fn delta(
-        &self,
-        parent: &Self::ParentState,
-        params: &Self::Parameters,
-        remote_summary: &Self::Summary,
-    ) -> Option<Self::Delta>;
-
-    /// Apply a delta from another peer
-    fn apply_delta(
-        &mut self,
-        parent: &Self::ParentState,
-        params: &Self::Parameters,
-        delta: &Option<Self::Delta>,
-    ) -> Result<(), String>;
-
-    /// Apply an operation to modify the state
-    fn apply_operation(
-        &mut self,
-        parent: &Self::ParentState,
-        params: &Self::Parameters,
-        op: &Self::Operation,
-        ctx: &OperationContext,
-    ) -> Result<(), String>;
 }
 
 /// Unique identifier for a user (their public verifying key)
@@ -387,7 +337,6 @@ impl ComposableState for PizzaOrderState {
     type Summary = PizzaOrderSummary;
     type Delta = PizzaOrderDelta;
     type Parameters = PizzaOrderParameters;
-    type Operation = PizzaOrderOperation;
 
     fn verify(
         &self,
@@ -447,20 +396,21 @@ impl ComposableState for PizzaOrderState {
         }
         Ok(())
     }
+}
 
-    fn apply_operation(
+impl PizzaOrderState {
+    pub fn apply_operation(
         &mut self,
-        _parent: &Self::ParentState,
-        params: &Self::Parameters,
-        op: &Self::Operation,
+        params: &PizzaOrderParameters,
+        op: &PizzaOrderOperation,
         ctx: &OperationContext,
     ) -> Result<(), String> {
         match op {
             PizzaOrderOperation::Config(config_op) => {
-                self.config.apply_operation(&(), params, config_op, ctx)
+                self.config.apply_operation(params, config_op, ctx)
             }
             PizzaOrderOperation::Items(items_op) => {
-                self.items.apply_operation(&self.config, params, items_op, ctx)
+                self.items.apply_operation(params, items_op, ctx)
             }
         }
     }
@@ -471,7 +421,6 @@ impl ComposableState for OrderConfiguration {
     type Summary = OrderConfigSummary;
     type Delta = OrderConfigDelta;
     type Parameters = PizzaOrderParameters;
-    type Operation = OrderOperation;
 
     fn verify(
         &self,
@@ -553,12 +502,27 @@ impl ComposableState for OrderConfiguration {
         }
         Ok(())
     }
+}
 
-    fn apply_operation(
+impl OrderConfiguration {
+    /// Message to sign for configuration changes
+    pub fn signing_message(&self) -> Vec<u8> {
+        let mut msg = Vec::new();
+        msg.extend_from_slice(b"pizza-order-config:");
+        msg.extend_from_slice(self.name.as_bytes());
+        msg.extend_from_slice(b":");
+        if let Some(ts) = self.created_at {
+            msg.extend_from_slice(&ts.timestamp().to_le_bytes());
+        }
+        msg.extend_from_slice(b":");
+        msg.extend_from_slice(&self.version.to_le_bytes());
+        msg
+    }
+
+    pub fn apply_operation(
         &mut self,
-        _parent: &Self::ParentState,
-        params: &Self::Parameters,
-        op: &Self::Operation,
+        params: &PizzaOrderParameters,
+        op: &OrderOperation,
         ctx: &OperationContext,
     ) -> Result<(), String> {
         // Only creator can modify configuration
@@ -601,28 +565,11 @@ impl ComposableState for OrderConfiguration {
     }
 }
 
-impl OrderConfiguration {
-    /// Message to sign for configuration changes
-    pub fn signing_message(&self) -> Vec<u8> {
-        let mut msg = Vec::new();
-        msg.extend_from_slice(b"pizza-order-config:");
-        msg.extend_from_slice(self.name.as_bytes());
-        msg.extend_from_slice(b":");
-        if let Some(ts) = self.created_at {
-            msg.extend_from_slice(&ts.timestamp().to_le_bytes());
-        }
-        msg.extend_from_slice(b":");
-        msg.extend_from_slice(&self.version.to_le_bytes());
-        msg
-    }
-}
-
 impl ComposableState for OrderItems {
     type ParentState = OrderConfiguration;
     type Summary = OrderItemsSummary;
     type Delta = OrderItemsDelta;
     type Parameters = PizzaOrderParameters;
-    type Operation = ItemOperation;
 
     fn verify(
         &self,
@@ -714,12 +661,13 @@ impl ComposableState for OrderItems {
         }
         Ok(())
     }
+}
 
-    fn apply_operation(
+impl OrderItems {
+    pub fn apply_operation(
         &mut self,
-        _parent: &Self::ParentState,
-        params: &Self::Parameters,
-        op: &Self::Operation,
+        params: &PizzaOrderParameters,
+        op: &ItemOperation,
         ctx: &OperationContext,
     ) -> Result<(), String> {
         let user_id = ctx.user_id();
@@ -878,32 +826,6 @@ impl OrderItem {
     }
 }
 
-impl PizzaOrderState {
-    /// Merge another state into this one (commutative operation)
-    pub fn merge(&mut self, other: &PizzaOrderState, params: &PizzaOrderParameters) -> Result<(), String> {
-        // Merge config - take higher version
-        if other.config.version > self.config.version {
-            other.config.verify(&(), params)?;
-            self.config = other.config.clone();
-        }
-
-        // Merge items - take higher version for each user
-        for (key, item) in &other.items.items {
-            item.verify(key, params)?;
-
-            match self.items.items.get(key) {
-                Some(existing) if existing.version >= item.version => {
-                    // Keep existing
-                }
-                _ => {
-                    self.items.items.insert(key.clone(), item.clone());
-                }
-            }
-        }
-
-        Ok(())
-    }
-}
 
 #[cfg(test)]
 mod tests {

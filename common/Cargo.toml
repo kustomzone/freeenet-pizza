@@ -9,6 +9,10 @@ ciborium.workspace = true
 ed25519-dalek.workspace = true
 chrono.workspace = true
 thiserror.workspace = true
+# Internal dependencies
+freenet-scaffold.workspace = true
+freenet-scaffold-macro.workspace = true
+freenet-stdlib.workspace = true
 
 [dev-dependencies]
 serde_json = "1.0"

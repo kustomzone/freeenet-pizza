@@ -1251,6 +1251,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "freenet-scaffold"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b05042fcd77909907cb8df29023c6a284b7fdc0434deaaa3d6c13b530f4f9dae"
+dependencies = [
+ "freenet-scaffold-macro",
+ "serde",
+]
+
+[[package]]
+name = "freenet-scaffold-macro"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "306f03a4c767216147e951527cd2460436d6220d97fa1399a137fdf21069222f"
+dependencies = [
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "freenet-stdlib"
 version = "0.1.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2207,6 +2227,9 @@ dependencies = [
  "chrono",
  "ciborium",
  "ed25519-dalek",
+ "freenet-scaffold",
+ "freenet-scaffold-macro",
+ "freenet-stdlib",
  "serde",
  "serde_json",
  "thiserror 1.0.69",
