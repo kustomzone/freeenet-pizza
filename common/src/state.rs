@@ -4,7 +4,7 @@
 //! Supports commutative merging for eventual consistency across peers.
 
 use chrono::{DateTime, Utc};
-use ed25519_dalek::{Signature, VerifyingKey};
+use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -107,6 +107,7 @@ mod user_id_version_map_serde {
 /// - Generate a compact summary
 /// - Compute deltas against a summary
 /// - Apply deltas from other peers
+/// - Apply operations to modify state
 pub trait ComposableState {
     /// Parent state that this component depends on
     type ParentState;
@@ -116,6 +117,8 @@ pub trait ComposableState {
     type Delta;
     /// Parameters for validation
     type Parameters;
+    /// Operation type for modifying this state
+    type Operation;
 
     /// Verify the component is valid
     fn verify(&self, parent: &Self::ParentState, params: &Self::Parameters) -> Result<(), String>;
@@ -137,6 +140,15 @@ pub trait ComposableState {
         parent: &Self::ParentState,
         params: &Self::Parameters,
         delta: &Option<Self::Delta>,
+    ) -> Result<(), String>;
+
+    /// Apply an operation to modify the state
+    fn apply_operation(
+        &mut self,
+        parent: &Self::ParentState,
+        params: &Self::Parameters,
+        op: &Self::Operation,
+        ctx: &OperationContext,
     ) -> Result<(), String>;
 }
 
@@ -218,6 +230,106 @@ pub struct OrderItem {
 }
 
 // ============================================================================
+// Operation types - for modifying state
+// ============================================================================
+
+/// Operations for modifying order configuration (creator only)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum OrderOperation {
+    /// Create/initialize the order
+    Create(CreateOrderOp),
+    /// Update the order name
+    UpdateName(UpdateNameOp),
+}
+
+/// Create a new order (creator only)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateOrderOp {
+    pub name: String,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Update order name (creator only)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateNameOp {
+    pub name: String,
+    pub version: u64,
+}
+
+/// Operations for modifying order items
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ItemOperation {
+    /// Add a new item
+    Add(AddItemOp),
+    /// Edit an existing item
+    Edit(EditItemOp),
+    /// Delete an item
+    Delete(DeleteItemOp),
+    /// Update paid status (creator only)
+    UpdatePaid(UpdatePaidOp),
+}
+
+/// Add an item to the order
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AddItemOp {
+    pub display_name: String,
+    pub order: String,
+    pub price_cents: u64,
+}
+
+/// Edit own item
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EditItemOp {
+    pub display_name: Option<String>,
+    pub order: Option<String>,
+    pub price_cents: Option<u64>,
+    pub version: u64,
+}
+
+/// Delete own item
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeleteItemOp {
+    pub version: u64,
+}
+
+/// Update paid status for a user (creator only)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdatePaidOp {
+    pub user: UserIdKey,
+    pub paid: bool,
+    pub version: u64,
+}
+
+/// Top-level operation for modifying pizza order state
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum PizzaOrderOperation {
+    /// Configuration operations (creator only)
+    Config(OrderOperation),
+    /// Item operations (any user for their own items, creator for paid status)
+    Items(ItemOperation),
+}
+
+/// Context for applying operations (includes signing key for authorization)
+pub struct OperationContext<'a> {
+    /// The signing key of the user performing the operation
+    pub signing_key: &'a SigningKey,
+}
+
+impl<'a> OperationContext<'a> {
+    pub fn new(signing_key: &'a SigningKey) -> Self {
+        Self { signing_key }
+    }
+
+    pub fn author(&self) -> VerifyingKey {
+        self.signing_key.verifying_key()
+    }
+
+    pub fn user_id(&self) -> UserIdKey {
+        UserIdKey(self.signing_key.verifying_key().to_bytes())
+    }
+}
+
+// ============================================================================
 // Summary types - compact representation for sync
 // ============================================================================
 
@@ -275,6 +387,7 @@ impl ComposableState for PizzaOrderState {
     type Summary = PizzaOrderSummary;
     type Delta = PizzaOrderDelta;
     type Parameters = PizzaOrderParameters;
+    type Operation = PizzaOrderOperation;
 
     fn verify(
         &self,
@@ -334,6 +447,23 @@ impl ComposableState for PizzaOrderState {
         }
         Ok(())
     }
+
+    fn apply_operation(
+        &mut self,
+        _parent: &Self::ParentState,
+        params: &Self::Parameters,
+        op: &Self::Operation,
+        ctx: &OperationContext,
+    ) -> Result<(), String> {
+        match op {
+            PizzaOrderOperation::Config(config_op) => {
+                self.config.apply_operation(&(), params, config_op, ctx)
+            }
+            PizzaOrderOperation::Items(items_op) => {
+                self.items.apply_operation(&self.config, params, items_op, ctx)
+            }
+        }
+    }
 }
 
 impl ComposableState for OrderConfiguration {
@@ -341,6 +471,7 @@ impl ComposableState for OrderConfiguration {
     type Summary = OrderConfigSummary;
     type Delta = OrderConfigDelta;
     type Parameters = PizzaOrderParameters;
+    type Operation = OrderOperation;
 
     fn verify(
         &self,
@@ -422,6 +553,52 @@ impl ComposableState for OrderConfiguration {
         }
         Ok(())
     }
+
+    fn apply_operation(
+        &mut self,
+        _parent: &Self::ParentState,
+        params: &Self::Parameters,
+        op: &Self::Operation,
+        ctx: &OperationContext,
+    ) -> Result<(), String> {
+        // Only creator can modify configuration
+        if ctx.author() != params.creator {
+            return Err("Only creator can modify order configuration".to_string());
+        }
+
+        match op {
+            OrderOperation::Create(create_op) => {
+                // Can only create if not already created
+                if self.version > 0 {
+                    return Err("Order already created".to_string());
+                }
+
+                self.name = create_op.name.clone();
+                self.created_at = Some(create_op.created_at);
+                self.version = 1;
+
+                let message = self.signing_message();
+                self.signature = Some(ctx.signing_key.sign(&message));
+                Ok(())
+            }
+            OrderOperation::UpdateName(update_op) => {
+                // Version must be greater than current
+                if update_op.version <= self.version {
+                    return Err(format!(
+                        "Update version {} must be greater than current version {}",
+                        update_op.version, self.version
+                    ));
+                }
+
+                self.name = update_op.name.clone();
+                self.version = update_op.version;
+
+                let message = self.signing_message();
+                self.signature = Some(ctx.signing_key.sign(&message));
+                Ok(())
+            }
+        }
+    }
 }
 
 impl OrderConfiguration {
@@ -445,6 +622,7 @@ impl ComposableState for OrderItems {
     type Summary = OrderItemsSummary;
     type Delta = OrderItemsDelta;
     type Parameters = PizzaOrderParameters;
+    type Operation = ItemOperation;
 
     fn verify(
         &self,
@@ -535,6 +713,123 @@ impl ComposableState for OrderItems {
             // absence in the source state
         }
         Ok(())
+    }
+
+    fn apply_operation(
+        &mut self,
+        _parent: &Self::ParentState,
+        params: &Self::Parameters,
+        op: &Self::Operation,
+        ctx: &OperationContext,
+    ) -> Result<(), String> {
+        let user_id = ctx.user_id();
+
+        match op {
+            ItemOperation::Add(add_op) => {
+                // User can only have one item
+                if self.items.contains_key(&user_id) {
+                    return Err("User already has an item in this order".to_string());
+                }
+
+                let mut item = OrderItem {
+                    display_name: add_op.display_name.clone(),
+                    order: add_op.order.clone(),
+                    price_cents: add_op.price_cents,
+                    paid: false,
+                    version: 1,
+                    signature: Signature::from_bytes(&[0u8; 64]), // placeholder
+                    signed_by: user_id.clone(),
+                };
+
+                let message = item.signing_message(&user_id);
+                item.signature = ctx.signing_key.sign(&message);
+
+                self.items.insert(user_id, item);
+                Ok(())
+            }
+            ItemOperation::Edit(edit_op) => {
+                let item = self
+                    .items
+                    .get(&user_id)
+                    .ok_or_else(|| "User has no item to edit".to_string())?;
+
+                // Version must be greater than current
+                if edit_op.version <= item.version {
+                    return Err(format!(
+                        "Edit version {} must be greater than current version {}",
+                        edit_op.version, item.version
+                    ));
+                }
+
+                let mut new_item = item.clone();
+
+                if let Some(ref name) = edit_op.display_name {
+                    new_item.display_name = name.clone();
+                }
+                if let Some(ref order) = edit_op.order {
+                    new_item.order = order.clone();
+                }
+                if let Some(price) = edit_op.price_cents {
+                    new_item.price_cents = price;
+                }
+
+                new_item.version = edit_op.version;
+                new_item.signed_by = user_id.clone();
+
+                let message = new_item.signing_message(&user_id);
+                new_item.signature = ctx.signing_key.sign(&message);
+
+                self.items.insert(user_id, new_item);
+                Ok(())
+            }
+            ItemOperation::Delete(delete_op) => {
+                let item = self
+                    .items
+                    .get(&user_id)
+                    .ok_or_else(|| "User has no item to delete".to_string())?;
+
+                // Version must match for delete
+                if delete_op.version != item.version {
+                    return Err(format!(
+                        "Delete version {} must match current version {}",
+                        delete_op.version, item.version
+                    ));
+                }
+
+                self.items.remove(&user_id);
+                Ok(())
+            }
+            ItemOperation::UpdatePaid(paid_op) => {
+                // Only creator can update paid status
+                if ctx.author() != params.creator {
+                    return Err("Only creator can update paid status".to_string());
+                }
+
+                let item = self
+                    .items
+                    .get(&paid_op.user)
+                    .ok_or_else(|| "User has no item to update".to_string())?;
+
+                // Version must be greater than current
+                if paid_op.version <= item.version {
+                    return Err(format!(
+                        "Update version {} must be greater than current version {}",
+                        paid_op.version, item.version
+                    ));
+                }
+
+                let mut new_item = item.clone();
+                new_item.paid = paid_op.paid;
+                new_item.version = paid_op.version;
+                new_item.signed_by = ctx.user_id();
+
+                let message = new_item.signing_message(&paid_op.user);
+                new_item.signature = ctx.signing_key.sign(&message);
+
+                self.items.insert(paid_op.user.clone(), new_item);
+                Ok(())
+            }
+        }
     }
 }
 

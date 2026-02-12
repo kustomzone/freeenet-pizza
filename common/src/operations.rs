@@ -2,12 +2,14 @@
 //!
 //! All operations are signed by the user performing them.
 
-use crate::state::{OrderItem, UserIdKey};
-use chrono::{DateTime, Utc};
+use crate::state::{
+    AddItemOp, CreateOrderOp, DeleteItemOp, EditItemOp, ItemOperation, OrderItem, OrderOperation,
+    PizzaOrderOperation, UpdateNameOp, UpdatePaidOp, UserIdKey,
+};
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use serde::{Deserialize, Serialize};
 
-/// All possible operations on the pizza order
+/// All possible operations on the pizza order (legacy wrapper for signed operations)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PizzaOperation {
     /// Initialize the order (creator only)
@@ -22,6 +24,32 @@ pub enum PizzaOperation {
     EditItem(EditItemOp),
     /// Delete own item
     DeleteItem(DeleteItemOp),
+}
+
+impl PizzaOperation {
+    /// Convert to the composable state operation type
+    pub fn to_composable_operation(&self) -> PizzaOrderOperation {
+        match self {
+            PizzaOperation::CreateOrder(op) => {
+                PizzaOrderOperation::Config(OrderOperation::Create(op.clone()))
+            }
+            PizzaOperation::UpdateName(op) => {
+                PizzaOrderOperation::Config(OrderOperation::UpdateName(op.clone()))
+            }
+            PizzaOperation::UpdatePaid(op) => {
+                PizzaOrderOperation::Items(ItemOperation::UpdatePaid(op.clone()))
+            }
+            PizzaOperation::AddItem(op) => {
+                PizzaOrderOperation::Items(ItemOperation::Add(op.clone()))
+            }
+            PizzaOperation::EditItem(op) => {
+                PizzaOrderOperation::Items(ItemOperation::Edit(op.clone()))
+            }
+            PizzaOperation::DeleteItem(op) => {
+                PizzaOrderOperation::Items(ItemOperation::Delete(op.clone()))
+            }
+        }
+    }
 }
 
 /// Signed operation wrapper
@@ -113,59 +141,10 @@ impl PizzaOperation {
     }
 }
 
-/// Create a new order (creator only)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreateOrderOp {
-    pub name: String,
-    pub created_at: DateTime<Utc>,
-}
-
-/// Update order name (creator only)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UpdateNameOp {
-    pub name: String,
-    pub version: u64,
-}
-
-/// Update paid status for a user (creator only)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UpdatePaidOp {
-    pub user: UserIdKey,
-    pub paid: bool,
-    pub version: u64,
-}
-
-/// Add an item to the order
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AddItemOp {
-    pub display_name: String,
-    pub order: String,
-    pub price_cents: u64,
-}
-
-/// Edit own item
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EditItemOp {
-    pub display_name: Option<String>,
-    pub order: Option<String>,
-    pub price_cents: Option<u64>,
-    pub version: u64,
-}
-
-/// Delete own item
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DeleteItemOp {
-    pub version: u64,
-}
-
 // Helper to create order items from operations
 impl OrderItem {
     /// Create a new order item from an add operation
-    pub fn from_add_op(
-        op: &AddItemOp,
-        owner: &UserIdKey,
-        signing_key: &SigningKey,
-    ) -> Self {
+    pub fn from_add_op(op: &AddItemOp, owner: &UserIdKey, signing_key: &SigningKey) -> Self {
         let mut item = OrderItem {
             display_name: op.display_name.clone(),
             order: op.order.clone(),
@@ -182,12 +161,7 @@ impl OrderItem {
     }
 
     /// Apply an edit operation
-    pub fn apply_edit(
-        &self,
-        op: &EditItemOp,
-        owner: &UserIdKey,
-        signing_key: &SigningKey,
-    ) -> Self {
+    pub fn apply_edit(&self, op: &EditItemOp, owner: &UserIdKey, signing_key: &SigningKey) -> Self {
         let mut item = self.clone();
 
         if let Some(ref name) = op.display_name {
