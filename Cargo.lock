@@ -2254,6 +2254,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "pizza-delegate"
+version = "0.1.0"
+dependencies = [
+ "bs58",
+ "ciborium",
+ "ed25519-dalek",
+ "freenet-stdlib",
+ "pizza-common",
+ "serde",
+]
+
+[[package]]
 name = "pizza-ui"
 version = "0.1.0"
 dependencies = [

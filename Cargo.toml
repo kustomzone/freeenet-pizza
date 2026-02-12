@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "common",
     "contracts/pizza-contract",
+    "delegates/pizza-delegate",
     "ui",
 ]
 
@@ -27,6 +28,7 @@ chrono = { version = "0.4", features = ["serde"] }
 thiserror = "1"
 base64 = "0.22.1"
 data-encoding = "2.3.3"
+bs58 = "0.5.1"
 
 # Freenet dependencies
 freenet-scaffold = "0.2.1"

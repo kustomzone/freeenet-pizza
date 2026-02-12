@@ -1,15 +1,19 @@
 [package]
 name = "pizza-delegate"
-version.workspace = true
-edition.workspace = true
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["freenet-main-delegate"]
+freenet-main-delegate = []
+
+[dependencies]
+ciborium.workspace = true
+freenet-stdlib.workspace = true
+bs58 = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+pizza-common = { path = "../../common" }
+ed25519-dalek = { workspace = true }
 
 [lib]
 crate-type = ["cdylib", "rlib"]
-
-[dependencies]
-pizza-common = { path = "../../common" }
-freenet-stdlib = { workspace = true, features = ["delegate"] }
-serde.workspace = true
-ciborium.workspace = true
-ed25519-dalek.workspace = true
-thiserror.workspace = true

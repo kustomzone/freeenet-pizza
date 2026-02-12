@@ -1,108 +1,99 @@
-//! Pizza Delegate
-//!
-//! Handles user identity and signing operations for the pizza ordering app.
-//! Runs locally on the user's device within the Freenet kernel.
+#![allow(unexpected_cfgs)]
 
-use ed25519_dalek::{SigningKey, VerifyingKey};
-use freenet_stdlib::prelude::*;
+mod context;
+mod handlers;
+mod models;
+mod utils;
+
+use context::*;
+use freenet_stdlib::prelude::{
+    delegate, ApplicationMessage, DelegateContext, DelegateCtx, DelegateError, DelegateInterface,
+    InboundDelegateMsg, OutboundDelegateMsg, Parameters,
+};
+use handlers::*;
+use models::*;
+use utils::*;
+
+// Custom logging module to handle different environments
+mod logging;
+
+use pizza_common::order_delegate::*;
 use serde::{Deserialize, Serialize};
 
-/// Request types for the delegate
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum DelegateRequest {
-    /// Get the user's public key
-    GetPublicKey,
-}
-
-/// Response types from the delegate
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum DelegateResponse {
-    /// The user's public key
-    PublicKey(VerifyingKey),
-    /// Error occurred
-    Error(String),
-}
-
-/// The pizza delegate implementation
-struct PizzaDelegate;
+/// Order delegate for storing and retrieving data in the Freenet secret storage.
+///
+/// This delegate provides a key-value store interface for chat applications,
+/// using the host function API for direct secret access (no message round-trips).
+pub struct OrderDelegate;
 
 #[delegate]
-impl DelegateInterface for PizzaDelegate {
+impl DelegateInterface for OrderDelegate {
     fn process(
-        params: Parameters<'static>,
-        _attested: Option<&'static [u8]>,
-        message: InboundDelegateMsg<'_>,
+        ctx: &mut DelegateCtx,
+        _parameters: Parameters<'static>,
+        attested: Option<&'static [u8]>,
+        message: InboundDelegateMsg,
     ) -> Result<Vec<OutboundDelegateMsg>, DelegateError> {
-        match message {
+        let message_type = match message {
+            InboundDelegateMsg::ApplicationMessage(_) => "application message",
+            InboundDelegateMsg::UserResponse(_) => "user response",
+            InboundDelegateMsg::GetContractResponse(_) => "get contract response",
+            InboundDelegateMsg::PutContractResponse(_) => "put contract response",
+            InboundDelegateMsg::UpdateContractResponse(_) => "update contract response",
+            InboundDelegateMsg::SubscribeContractResponse(_) => "subscribe contract response",
+        };
+
+        logging::info(&format!("Delegate received message of type {message_type}"));
+
+        // Verify that attested is provided - this is the authenticated origin
+        let origin: Origin = match attested {
+            Some(origin) => Origin(origin.to_vec()),
+            None => {
+                logging::info("Missing attested origin");
+                return Err(DelegateError::Other(format!(
+                    "missing attested origin for message type: {:?}",
+                    message_type
+                )));
+            }
+        };
+
+        let result = match message {
             InboundDelegateMsg::ApplicationMessage(app_msg) => {
-                // Deserialize the request
-                let request: DelegateRequest = ciborium::from_reader(app_msg.payload.as_ref())
-                    .map_err(|e| DelegateError::Deser(format!("Invalid request: {}", e)))?;
-
-                // Get or generate the signing key from secret storage
-                let signing_key = get_or_create_signing_key()?;
-
-                let response = match request {
-                    DelegateRequest::GetPublicKey => {
-                        DelegateResponse::PublicKey(signing_key.verifying_key())
-                    }
-
-                };
-
-                // Serialize response
-                let mut response_bytes = Vec::new();
-                ciborium::into_writer(&response, &mut response_bytes)
-                    .map_err(|e| DelegateError::Deser(format!("Failed to serialize response: {}", e)))?;
-
-                Ok(vec![OutboundDelegateMsg::ApplicationMessage(
-                    ApplicationMessage::new(app_msg.app, response_bytes)
-                        .processed(app_msg.processed),
-                )])
+                if app_msg.processed {
+                    logging::info("Received already processed message");
+                    Err(DelegateError::Other(
+                        "cannot process an already processed message".into(),
+                    ))
+                } else {
+                    handle_application_message(ctx, app_msg, &origin)
+                }
             }
 
-            InboundDelegateMsg::GetSecretRequest(req) => {
-                // Handle secret storage requests
-                Ok(vec![OutboundDelegateMsg::GetSecretResponse(
-                    GetSecretResponse {
-                        key: req.key,
-                        value: None, // Let the kernel handle storage
-                    },
-                )])
+            InboundDelegateMsg::UserResponse(_) => {
+                logging::info("Received unexpected UserResponse");
+                Err(DelegateError::Other(
+                    "unexpected message type: UserResponse".into(),
+                ))
             }
 
-            _ => Ok(vec![]),
+            InboundDelegateMsg::GetContractResponse(_)
+            | InboundDelegateMsg::PutContractResponse(_)
+            | InboundDelegateMsg::UpdateContractResponse(_)
+            | InboundDelegateMsg::SubscribeContractResponse(_) => {
+                logging::info(&format!(
+                    "Received unexpected contract response: {message_type}"
+                ));
+                Err(DelegateError::Other(format!(
+                    "unexpected message type: {message_type}"
+                )))
+            }
+        };
+
+        match &result {
+            Ok(msgs) => logging::info(&format!("Process returning {} messages", msgs.len())),
+            Err(e) => logging::info(&format!("Process returning error: {e}")),
         }
-    }
-}
 
-/// Get or create the signing key from secret storage
-fn get_or_create_signing_key() -> Result<SigningKey, DelegateError> {
-    // In a real implementation, this would use the delegate's secret storage
-    // For now, we generate a deterministic key based on some seed
-    // TODO: Implement proper secret storage integration
-
-    // This is a placeholder - in production, the key would be stored securely
-    let seed: [u8; 32] = [
-        0x42, 0x69, 0x7a, 0x7a, 0x61, 0x2d, 0x6b, 0x65, 0x79, 0x2d, 0x73, 0x65, 0x65, 0x64, 0x2d,
-        0x76, 0x31, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00,
-    ];
-
-    Ok(SigningKey::from_bytes(&seed))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_get_public_key() {
-        let signing_key = get_or_create_signing_key().unwrap();
-        let verifying_key = signing_key.verifying_key();
-
-        // Should be consistent
-        let signing_key2 = get_or_create_signing_key().unwrap();
-        assert_eq!(signing_key.verifying_key(), signing_key2.verifying_key());
-        assert_eq!(verifying_key, signing_key2.verifying_key());
+        result
     }
 }
