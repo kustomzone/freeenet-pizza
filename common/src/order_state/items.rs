@@ -36,25 +36,10 @@ impl ComposableState for ItemsV1 {
                 &item.item.signed_by
             };
 
-        }
-        /*for message in &self.items {
-            let verifying_key = if message.item.author == owner_id {
-                // Owner's messages are validated against the owner's key
-                &parameters.owner
-            } else if let Some(member) = members_by_id.get(&message.item.author) {
-                // Regular member messages are validated against their member key
-                &member.member.member_vk
-            } else {
-                return Err(format!(
-                    "Message author not found: {:?}",
-                    message.item.author
-                ));
-            };
-
-            if message.validate(verifying_key).is_err() {
-                return Err(format!("Invalid message signature: id:{:?}", message.id()));
+            if item.validate(verifying_key).is_err() {
+                return Err(format!("Invalid message signature: id:{:?}", item.id()));
             }
-        }*/
+        }
 
         Ok(())
     }
