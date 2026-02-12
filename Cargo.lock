@@ -2224,12 +2224,15 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 name = "pizza-common"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "chrono",
  "ciborium",
+ "data-encoding",
  "ed25519-dalek",
  "freenet-scaffold",
  "freenet-scaffold-macro",
  "freenet-stdlib",
+ "rand 0.8.5",
  "serde",
  "serde_json",
  "thiserror 1.0.69",

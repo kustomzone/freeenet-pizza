@@ -18,12 +18,15 @@ ciborium = "0.2"
 # Crypto
 ed25519-dalek = { version = "2", features = ["serde", "rand_core"] }
 blake3 = "1"
+rand = { version = "0.8.5", features = ["getrandom"], default-features = true }
 
 # Time
 chrono = { version = "0.4", features = ["serde"] }
 
 # Utils
 thiserror = "1"
+base64 = "0.22.1"
+data-encoding = "2.3.3"
 
 # Freenet dependencies
 freenet-scaffold = "0.2.1"
