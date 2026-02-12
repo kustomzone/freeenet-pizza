@@ -24,11 +24,27 @@ impl ComposableState for AuthorizedPaidV1 {
 
     fn verify(
         &self,
-        _parent_state: &Self::ParentState,
+        parent_state: &Self::ParentState,
         parameters: &Self::Parameters,
     ) -> Result<(), String> {
         self.verify_signature(&parameters.owner)
-            .map_err(|e| format!("Invalid signature: {}", e))
+            .map_err(|e| format!("Invalid signature: {}", e))?;
+
+        for user_id in self.paid.values.keys() {
+            if !parent_state
+                .items
+                .items
+                .iter()
+                .any(|item| item.item.signed_by == *user_id)
+            {
+                return Err(format!(
+                    "User {:?} has a paid entry but no corresponding item",
+                    user_id
+                ));
+            }
+        }
+
+        Ok(())
     }
 
     fn summarize(
@@ -54,7 +70,7 @@ impl ComposableState for AuthorizedPaidV1 {
 
     fn apply_delta(
         &mut self,
-        _parent_state: &Self::ParentState,
+        parent_state: &Self::ParentState,
         parameters: &Self::Parameters,
         delta: &Option<Self::Delta>,
     ) -> Result<(), String> {
@@ -73,7 +89,20 @@ impl ComposableState for AuthorizedPaidV1 {
                 );
             }
 
-            // TODO: Verify if all the entries in HashMap have corrosponding entry in _parent_state.items
+            // Verify if all the entries in HashMap have corrosponding entry in _parent_state.items
+            for user_id in delta.paid.values.keys() {
+                if !parent_state
+                    .items
+                    .items
+                    .iter()
+                    .any(|item| item.item.signed_by == *user_id)
+                {
+                    return Err(format!(
+                        "User {:?} has a paid entry but no corresponding item",
+                        user_id
+                    ));
+                }
+            }
 
             // If all checks pass, apply the delta
             self.paid = delta.paid.clone();
@@ -154,4 +183,66 @@ impl fmt::Debug for AuthorizedPaidV1 {
 pub struct Paid {
     pub values: HashMap<UserId, bool>,
     pub paid_version: u32,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::order_state::items::{AuthorizedItemV1, ItemV1, ItemContentV1};
+    use crate::order_state::OrderParametersV1;
+    use chrono::Utc;
+    use ed25519_dalek::SigningKey;
+    use rand::rngs::OsRng;
+
+    #[test]
+    fn test_paid_validation() {
+        let mut rng = OsRng;
+        let owner_signing_key = SigningKey::generate(&mut rng);
+        let owner_verifying_key = owner_signing_key.verifying_key();
+        
+        let user_signing_key = SigningKey::generate(&mut rng);
+        let user_id = user_signing_key.verifying_key();
+
+        let parameters = OrderParametersV1 {
+            owner: owner_verifying_key,
+            created_at: Utc::now(),
+        };
+
+        let mut parent_state = FullOrderStateV1::default();
+        
+        // 1. Test: Paid entry with no corresponding item should fail
+        let mut paid_values = HashMap::new();
+        paid_values.insert(user_id, true);
+        let paid = Paid {
+            values: paid_values,
+            paid_version: 1,
+        };
+        let auth_paid = AuthorizedPaidV1::new(paid, &owner_signing_key);
+
+        let result = auth_paid.verify(&parent_state, &parameters);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("has a paid entry but no corresponding item"));
+
+        // 2. Test: Paid entry WITH corresponding item should pass
+        let item = ItemV1 {
+            signed_by: user_id,
+            owner_sign: false,
+            content: ItemContentV1::Item {
+                display_name: "Test".to_string(),
+                order: "Pizza".to_string(),
+                price_cents: 1000,
+            },
+        };
+        let auth_item = AuthorizedItemV1::new(item, &user_signing_key);
+        parent_state.items.items.push(auth_item);
+
+        let result = auth_paid.verify(&parent_state, &parameters);
+        assert!(result.is_ok());
+        
+        // 3. Test: apply_delta should also fail if item is missing
+        let empty_parent_state = FullOrderStateV1::default();
+        let mut current_paid = AuthorizedPaidV1::default();
+        let result = current_paid.apply_delta(&empty_parent_state, &parameters, &Some(auth_paid));
+        assert!(result.is_err());
+    }
 }
