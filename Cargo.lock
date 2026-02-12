@@ -2245,6 +2245,7 @@ dependencies = [
  "chrono",
  "ciborium",
  "ed25519-dalek",
+ "freenet-scaffold",
  "freenet-stdlib",
  "pizza-common",
  "rand 0.8.5",

@@ -14,10 +14,11 @@ ciborium.workspace = true
 ed25519-dalek.workspace = true
 chrono.workspace = true
 thiserror.workspace = true
-rand = "0.8"
+freenet-scaffold.workspace = true
+
 
 [dev-dependencies]
-rand = "0.8"
+rand.workspace = true
 
 [profile.release]
 lto = true

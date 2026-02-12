@@ -1,114 +1,130 @@
-//! Pizza Order Contract
-//!
-//! A Freenet contract for collaborative pizza ordering.
-//! Supports commutative state merging for eventual consistency.
-
+use ciborium::{de::from_reader, ser::into_writer};
 use freenet_stdlib::prelude::*;
-use pizza_common::{
-    ComposableState, FullOrderStateV1, OrderParametersV1,
-};
 
-struct PizzaContract;
+use freenet_scaffold::ComposableState;
+use freenet_stdlib::prelude::ContractError;
+use pizza_common::order_state::{OrderParametersV1,  FullOrderStateV1Delta, FullOrderStateV1Summary};
+use pizza_common::FullOrderStateV1;
+
+// NOTE: Crypto helper modules intentionally not compiled by default.
+// They are retained under examples/docs to avoid accidental inclusion.
+
+#[allow(dead_code)]
+struct Contract;
 
 #[contract]
-impl ContractInterface for PizzaContract {
-    /// Validate that the state is internally consistent
+impl ContractInterface for Contract {
     fn validate_state(
         parameters: Parameters<'static>,
         state: State<'static>,
         _related: RelatedContracts<'static>,
-    ) -> Result<ValidateResult, ContractError> {
-        let params: OrderParametersV1 = ciborium::from_reader(parameters.as_ref())
-            .map_err(|e| ContractError::Deser(format!("Invalid parameters: {}", e)))?;
+    ) -> Result<ValidateResult, freenet_stdlib::prelude::ContractError> {
+        let bytes = state.as_ref();
+        // allow empty room_state
+        if bytes.is_empty() {
+            return Ok(ValidateResult::Valid);
+        }
+        let chat_state = from_reader::<FullOrderStateV1, &[u8]>(bytes)
+            .map_err(|e| ContractError::Deser(e.to_string()))?;
 
-        let pizza_state: FullOrderStateV1 = ciborium::from_reader(state.as_ref())
-            .map_err(|e| ContractError::Deser(format!("Invalid state: {}", e)))?;
+        let parameters = from_reader::<OrderParametersV1, &[u8]>(parameters.as_ref())
+            .map_err(|e| ContractError::Deser(e.to_string()))?;
 
-        // Verify state using ComposableState
-        pizza_state
-            .verify(&pizza_state, &params)
-            .map_err(|_| ContractError::InvalidState)?;
-
-        Ok(ValidateResult::Valid)
+        chat_state
+            .verify(&chat_state, &parameters)
+            .map(|_| ValidateResult::Valid)
+            .map_err(|_| ContractError::InvalidState)
     }
 
-    /// Update state with new data (must be commutative)
     fn update_state(
         parameters: Parameters<'static>,
         state: State<'static>,
         data: Vec<UpdateData<'static>>,
-    ) -> Result<UpdateModification<'static>, ContractError> {
-        let params: OrderParametersV1 = ciborium::from_reader(parameters.as_ref())
-            .map_err(|e| ContractError::Deser(format!("Invalid parameters: {}", e)))?;
-
-        let mut pizza_state: FullOrderStateV1 = if state.as_ref().is_empty() {
-            FullOrderStateV1::default()
-        } else {
-            ciborium::from_reader(state.as_ref())
-                .map_err(|e| ContractError::Deser(format!("Invalid state: {}", e)))?
-        };
+    ) -> Result<UpdateModification<'static>, freenet_stdlib::prelude::ContractError> {
+        let parameters = from_reader::<OrderParametersV1, &[u8]>(parameters.as_ref())
+            .map_err(|e| ContractError::Deser(e.to_string()))?;
+        let mut chat_state = from_reader::<FullOrderStateV1, &[u8]>(state.as_ref())
+            .map_err(|e| ContractError::Deser(e.to_string()))?;
 
         for update in data {
-            if let UpdateData::State(new_state) = update {
-                let other: FullOrderStateV1 = ciborium::from_reader(new_state.as_ref())
-                    .map_err(|e| ContractError::Deser(format!("Invalid update state: {}", e)))?;
-                // Naive strategy: accept newer components if they verify against params
-                // In a real contract we'd compute and apply deltas per component
-                if other.verify(&other, &params).is_ok() {
-                    pizza_state = other;
+            match update {
+                UpdateData::State(new_state) => {
+                    let new_state = from_reader::<FullOrderStateV1, &[u8]>(new_state.as_ref())
+                        .map_err(|e| ContractError::Deser(e.to_string()))?;
+                    chat_state
+                        .merge(&chat_state.clone(), &parameters, &new_state)
+                        .map_err(|e| ContractError::InvalidUpdateWithInfo {
+                            reason: e.to_string(),
+                        })?;
                 }
+                UpdateData::Delta(d) => {
+                    if d.as_ref().is_empty() {
+                        continue;
+                    }
+                    let delta = from_reader::<FullOrderStateV1Delta, &[u8]>(d.as_ref())
+                        .map_err(|e| ContractError::Deser(e.to_string()))?;
+                    chat_state
+                        .apply_delta(&chat_state.clone(), &parameters, &Some(delta))
+                        .map_err(|e| ContractError::InvalidUpdateWithInfo {
+                            reason: e.to_string(),
+                        })?;
+                }
+                UpdateData::RelatedState {
+                    related_to: _,
+                    state: _,
+                } => {
+                    // TODO: related room_state handling not needed for river
+                }
+                _ => unreachable!(),
             }
         }
 
-        // Serialize updated state
-        let mut state_bytes = Vec::new();
-        ciborium::into_writer(&pizza_state, &mut state_bytes)
-            .map_err(|e| ContractError::Deser(format!("Failed to serialize state: {}", e)))?;
+        let mut updated_state = vec![];
+        into_writer(&chat_state, &mut updated_state)
+            .map_err(|e| ContractError::Deser(e.to_string()))?;
 
-        Ok(UpdateModification::valid(State::from(state_bytes)))
+        Ok(UpdateModification::valid(updated_state.into()))
     }
 
-    /// Generate a concise summary of the state for delta computation
     fn summarize_state(
         parameters: Parameters<'static>,
         state: State<'static>,
-    ) -> Result<StateSummary<'static>, ContractError> {
-        let _params: OrderParametersV1 = ciborium::from_reader(parameters.as_ref())
-            .map_err(|e| ContractError::Deser(format!("Invalid parameters: {}", e)))?;
-
-        let _pizza_state: FullOrderStateV1 = if state.as_ref().is_empty() {
-            FullOrderStateV1::default()
-        } else {
-            ciborium::from_reader(state.as_ref())
-                .map_err(|e| ContractError::Deser(format!("Invalid state: {}", e)))?
-        };
-
-        // For now, simplified: return empty summary
-        Ok(StateSummary::from(Vec::<u8>::new()))
+    ) -> Result<StateSummary<'static>, freenet_stdlib::prelude::ContractError> {
+        let state = state.as_ref();
+        if state.is_empty() {
+            return Ok(StateSummary::from(vec![]));
+        }
+        let parameters = from_reader::<OrderParametersV1, &[u8]>(parameters.as_ref())
+            .map_err(|e| ContractError::Deser(e.to_string()))?;
+        let state = from_reader::<FullOrderStateV1, &[u8]>(state)
+            .map_err(|e| ContractError::Deser(e.to_string()))?;
+        let summary = state.summarize(&state, &parameters);
+        let mut summary_bytes = vec![];
+        into_writer(&summary, &mut summary_bytes)
+            .map_err(|e| ContractError::Deser(e.to_string()))?;
+        Ok(StateSummary::from(summary_bytes))
     }
 
-    /// Generate a delta from a summary (what the requester is missing)
     fn get_state_delta(
         parameters: Parameters<'static>,
         state: State<'static>,
         summary: StateSummary<'static>,
-    ) -> Result<StateDelta<'static>, ContractError> {
-        let _params: OrderParametersV1 = ciborium::from_reader(parameters.as_ref())
-            .map_err(|e| ContractError::Deser(format!("Invalid parameters: {}", e)))?;
-
-        let _pizza_state: FullOrderStateV1 = if state.as_ref().is_empty() {
-            FullOrderStateV1::default()
-        } else {
-            ciborium::from_reader(state.as_ref())
-                .map_err(|e| ContractError::Deser(format!("Invalid state: {}", e)))?
-        };
-
-        // Simplified: return empty delta
-        Ok(StateDelta::from(Vec::<u8>::new()))
+    ) -> Result<StateDelta<'static>, freenet_stdlib::prelude::ContractError> {
+        let chat_state = from_reader::<FullOrderStateV1, &[u8]>(state.as_ref())
+            .map_err(|e| ContractError::Deser(e.to_string()))?;
+        let parameters = from_reader::<OrderParametersV1, &[u8]>(parameters.as_ref())
+            .map_err(|e| ContractError::Deser(e.to_string()))?;
+        let summary = from_reader::<FullOrderStateV1Summary, &[u8]>(summary.as_ref())
+            .map_err(|e| ContractError::Deser(e.to_string()))?;
+        let delta = chat_state.delta(&chat_state, &parameters, &summary);
+        match delta {
+            Some(d) => {
+                let mut delta_bytes = vec![];
+                into_writer(&d, &mut delta_bytes)
+                    .map_err(|e| ContractError::Deser(e.to_string()))?;
+                Ok(StateDelta::from(delta_bytes))
+            }
+            None => Ok(StateDelta::from(vec![])),
+        }
     }
-}
-
-#[cfg(test)]
-mod tests {
-    // Tests for the old state/ops have been removed during migration to the new order_state API.
 }
