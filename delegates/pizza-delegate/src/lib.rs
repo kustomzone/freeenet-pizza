@@ -3,12 +3,8 @@
 //! Handles user identity and signing operations for the pizza ordering app.
 //! Runs locally on the user's device within the Freenet kernel.
 
-use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
+use ed25519_dalek::{SigningKey, VerifyingKey};
 use freenet_stdlib::prelude::*;
-use pizza_common::{
-    AddItemOp, EditItemOp, OrderConfiguration, OrderItem, PizzaOperation, SignedOperation,
-    UserIdKey,
-};
 use serde::{Deserialize, Serialize};
 
 /// Request types for the delegate
@@ -16,16 +12,6 @@ use serde::{Deserialize, Serialize};
 pub enum DelegateRequest {
     /// Get the user's public key
     GetPublicKey,
-    /// Sign a pizza operation
-    SignOperation(PizzaOperation),
-    /// Sign an order configuration (creator only)
-    SignConfiguration(OrderConfiguration),
-    /// Create a signed order item
-    CreateOrderItem {
-        display_name: String,
-        order: String,
-        price_cents: u64,
-    },
 }
 
 /// Response types from the delegate
@@ -33,12 +19,6 @@ pub enum DelegateRequest {
 pub enum DelegateResponse {
     /// The user's public key
     PublicKey(VerifyingKey),
-    /// A signed operation
-    SignedOperation(SignedOperation),
-    /// A signed configuration
-    SignedConfiguration(OrderConfiguration),
-    /// A signed order item
-    OrderItem(OrderItem),
     /// Error occurred
     Error(String),
 }
@@ -67,34 +47,6 @@ impl DelegateInterface for PizzaDelegate {
                         DelegateResponse::PublicKey(signing_key.verifying_key())
                     }
 
-                    DelegateRequest::SignOperation(operation) => {
-                        let signed = SignedOperation::new(operation, &signing_key);
-                        DelegateResponse::SignedOperation(signed)
-                    }
-
-                    DelegateRequest::SignConfiguration(mut config) => {
-                        let message = config.signing_message();
-                        config.signature = Some(signing_key.sign(&message));
-                        DelegateResponse::SignedConfiguration(config)
-                    }
-
-                    DelegateRequest::CreateOrderItem {
-                        display_name,
-                        order,
-                        price_cents,
-                    } => {
-                        let user_id = UserIdKey::from(&signing_key.verifying_key());
-                        let item = OrderItem::from_add_op(
-                            &AddItemOp {
-                                display_name,
-                                order,
-                                price_cents,
-                            },
-                            &user_id,
-                            &signing_key,
-                        );
-                        DelegateResponse::OrderItem(item)
-                    }
                 };
 
                 // Serialize response
@@ -151,19 +103,6 @@ mod tests {
         // Should be consistent
         let signing_key2 = get_or_create_signing_key().unwrap();
         assert_eq!(signing_key.verifying_key(), signing_key2.verifying_key());
-    }
-
-    #[test]
-    fn test_sign_operation() {
-        let signing_key = get_or_create_signing_key().unwrap();
-
-        let op = PizzaOperation::AddItem(AddItemOp {
-            display_name: "Test User".to_string(),
-            order: "1x Margherita".to_string(),
-            price_cents: 1200,
-        });
-
-        let signed = SignedOperation::new(op, &signing_key);
-        assert!(signed.verify().is_ok());
+        assert_eq!(verifying_key, signing_key2.verifying_key());
     }
 }

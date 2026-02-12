@@ -4,12 +4,12 @@
 //! Currently uses local storage as a mock backend.
 
 use crate::services::PizzaInvite;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
 use pizza_common::{
-    AddItemOp, OrderConfiguration, OrderItem, OrderItems, PizzaOrderParameters, PizzaOrderState,
-    UserIdKey,
+    FullOrderStateV1, OrderParametersV1,
 };
+use pizza_common::order_state::{AuthorizedOrderV1, Order, ItemsV1, AuthorizedItemV1, ItemV1, ItemContentV1, AuthorizedPaidV1, Paid};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -19,33 +19,35 @@ pub struct PizzaOrder {
     /// Unique identifier (contract key in real implementation)
     pub id: String,
     /// Contract parameters
-    pub params: PizzaOrderParametersSerde,
+    pub params: OrderParametersSerde,
     /// Current state
-    pub state: PizzaOrderState,
+    pub state: FullOrderStateV1,
 }
 
-/// Serializable version of PizzaOrderParameters
+/// Serializable version of OrderParametersV1
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PizzaOrderParametersSerde {
-    pub creator: [u8; 32],
-    pub order_id: [u8; 32],
+pub struct OrderParametersSerde {
+    pub owner: [u8; 32],
+    pub created_at_rfc3339: String,
 }
 
-impl PizzaOrderParametersSerde {
-    pub fn to_params(&self) -> Result<PizzaOrderParameters, String> {
-        Ok(PizzaOrderParameters {
-            creator: VerifyingKey::from_bytes(&self.creator)
-                .map_err(|e| format!("Invalid creator key: {}", e))?,
-            order_id: self.order_id,
+impl OrderParametersSerde {
+    pub fn to_params(&self) -> Result<OrderParametersV1, String> {
+        Ok(OrderParametersV1 {
+            owner: VerifyingKey::from_bytes(&self.owner)
+                .map_err(|e| format!("Invalid owner key: {}", e))?,
+            created_at: DateTime::parse_from_rfc3339(&self.created_at_rfc3339)
+                .map_err(|e| format!("Invalid created_at: {}", e))?
+                .with_timezone(&Utc),
         })
     }
 }
 
-impl From<&PizzaOrderParameters> for PizzaOrderParametersSerde {
-    fn from(params: &PizzaOrderParameters) -> Self {
-        PizzaOrderParametersSerde {
-            creator: params.creator.to_bytes(),
-            order_id: params.order_id,
+impl From<&OrderParametersV1> for OrderParametersSerde {
+    fn from(params: &OrderParametersV1) -> Self {
+        OrderParametersSerde {
+            owner: params.owner.to_bytes(),
+            created_at_rfc3339: params.created_at.to_rfc3339(),
         }
     }
 }
@@ -84,33 +86,28 @@ impl AppState {
 
     /// Create a new pizza order
     pub fn create_order(&mut self, name: String, creator_key: &SigningKey) -> String {
-        let order_id: [u8; 32] = rand::random();
-        let id = hex_encode(&order_id[..8]);
+        let random_id: [u8; 32] = rand::random();
+        let id = hex_encode(&random_id[..8]);
 
-        let params = PizzaOrderParameters {
-            creator: creator_key.verifying_key(),
-            order_id,
+        let params = OrderParametersV1 {
+            owner: creator_key.verifying_key(),
+            created_at: Utc::now(),
         };
 
-        let mut config = OrderConfiguration {
-            name,
-            created_at: Some(Utc::now()),
-            version: 1,
-            signature: None,
-        };
+        // Build initial state using new order_state API
+        let order_msg = Order { name, order_version: 1 };
+        let authorized_order = AuthorizedOrderV1::new(order_msg, creator_key);
 
-        // Sign the configuration
-        let message = config.signing_message();
-        config.signature = Some(creator_key.sign(&message));
-
-        let state = PizzaOrderState {
-            config,
-            items: OrderItems::default(),
+        let state = FullOrderStateV1 {
+            order: authorized_order,
+            items: ItemsV1::default(),
+            paid: AuthorizedPaidV1::new(Paid::default(), creator_key),
+            ..Default::default()
         };
 
         let order = PizzaOrder {
             id: id.clone(),
-            params: PizzaOrderParametersSerde::from(&params),
+            params: OrderParametersSerde::from(&params),
             state,
         };
 
@@ -122,30 +119,20 @@ impl AppState {
     /// Create an order from an invite (joining an existing order)
     pub fn create_order_from_invite(&mut self, invite: &PizzaInvite, _user_key: &SigningKey) {
         // In a real Freenet implementation, this would:
-        // 1. Subscribe to the contract using the order_id
+        // 1. Subscribe to the contract using the order id
         // 2. Fetch the current state from the network
         // For now, we create a placeholder order
 
-        // Use the invite's order_id directly
         let order_id = invite.order_id.clone();
 
-        // Create a placeholder - in production this would be fetched from network
-        let params = PizzaOrderParametersSerde {
-            creator: [0u8; 32], // Unknown creator - would be fetched from contract
-            order_id: [0u8; 32],
+        let params = OrderParametersSerde {
+            owner: [0u8; 32], // Unknown owner - would be fetched from contract
+            created_at_rfc3339: Utc::now().to_rfc3339(),
         };
 
-        let config = OrderConfiguration {
-            name: invite.order_name.clone(),
-            created_at: Some(Utc::now()),
-            version: 1,
-            signature: None, // Would be fetched from contract
-        };
-
-        let state = PizzaOrderState {
-            config,
-            items: OrderItems::default(),
-        };
+        let mut state = FullOrderStateV1::default();
+        // Set the visible name; in a real app we'd fetch a signed name from the network
+        state.order.order.name = invite.order_name.clone();
 
         let order = PizzaOrder {
             id: order_id.clone(),
@@ -171,19 +158,43 @@ impl AppState {
             .get_mut(order_id)
             .ok_or_else(|| "Order not found".to_string())?;
 
-        let user_id = UserIdKey::from(&user_key.verifying_key());
+        let user_vk = user_key.verifying_key();
 
-        let item = OrderItem::from_add_op(
-            &AddItemOp {
+        // Determine next version for this user's item
+        let next_version = order
+            .state
+            .items
+            .items
+            .iter()
+            .find(|it| it.item.signed_by == user_vk)
+            .map(|it| it.item.version + 1)
+            .unwrap_or(1);
+
+        let item = ItemV1 {
+            signed_by: user_vk,
+            owner_sign: false,
+            version: next_version,
+            content: ItemContentV1::Item {
                 display_name,
                 order: order_text,
                 price_cents,
             },
-            &user_id,
-            user_key,
-        );
+        };
+        let auth_item = AuthorizedItemV1::new(item, user_key);
 
-        order.state.items.items.insert(user_id, item);
+        // Replace existing entry for this user or push new
+        if let Some(pos) = order
+            .state
+            .items
+            .items
+            .iter()
+            .position(|it| it.item.signed_by == user_vk)
+        {
+            order.state.items.items[pos] = auth_item;
+        } else {
+            order.state.items.items.push(auth_item);
+        }
+
         self.save();
         Ok(())
     }
@@ -202,25 +213,36 @@ impl AppState {
             .get_mut(order_id)
             .ok_or_else(|| "Order not found".to_string())?;
 
-        let user_id = UserIdKey::from(&user_key.verifying_key());
+        let user_vk = user_key.verifying_key();
 
-        let existing = order
+        let pos = order
             .state
             .items
             .items
-            .get(&user_id)
-            .ok_or_else(|| "Item not found".to_string())?
-            .clone();
+            .iter()
+            .position(|it| it.item.signed_by == user_vk)
+            .ok_or_else(|| "Item not found".to_string())?;
 
-        let edit_op = pizza_common::EditItemOp {
-            display_name,
-            order: order_text,
-            price_cents,
-            version: existing.version + 1,
+        let existing = order.state.items.items[pos].clone();
+
+        // Build updated item content
+        let (mut disp, mut ord, mut price) = match existing.item.content {
+            ItemContentV1::Item { display_name, order, price_cents } => (display_name, order, price_cents),
+            ItemContentV1::Deleted { .. } => (String::new(), String::new(), 0),
         };
+        if let Some(v) = display_name { disp = v; }
+        if let Some(v) = order_text { ord = v; }
+        if let Some(v) = price_cents { price = v; }
 
-        let updated = existing.apply_edit(&edit_op, &user_id, user_key);
-        order.state.items.items.insert(user_id, updated);
+        let new_item = ItemV1 {
+            signed_by: user_vk,
+            owner_sign: false,
+            version: existing.item.version + 1,
+            content: ItemContentV1::Item { display_name: disp, order: ord, price_cents: price },
+        };
+        let auth_item = AuthorizedItemV1::new(new_item, user_key);
+        order.state.items.items[pos] = auth_item;
+
         self.save();
         Ok(())
     }
@@ -232,8 +254,16 @@ impl AppState {
             .get_mut(order_id)
             .ok_or_else(|| "Order not found".to_string())?;
 
-        let user_id = UserIdKey::from(&user_key.verifying_key());
-        order.state.items.items.remove(&user_id);
+        let user_vk = user_key.verifying_key();
+        if let Some(pos) = order
+            .state
+            .items
+            .items
+            .iter()
+            .position(|it| it.item.signed_by == user_vk)
+        {
+            order.state.items.items.remove(pos);
+        }
         self.save();
         Ok(())
     }
@@ -242,7 +272,7 @@ impl AppState {
     pub fn update_paid(
         &mut self,
         order_id: &str,
-        target_user: &UserIdKey,
+        target_user: &VerifyingKey,
         paid: bool,
         creator_key: &SigningKey,
     ) -> Result<(), String> {
@@ -251,28 +281,26 @@ impl AppState {
             .get_mut(order_id)
             .ok_or_else(|| "Order not found".to_string())?;
 
-        // Verify caller is creator
+        // Verify caller is owner
         let params = order.params.to_params()?;
-        if creator_key.verifying_key() != params.creator {
-            return Err("Only creator can update paid status".to_string());
+        if creator_key.verifying_key() != params.owner {
+            return Err("Only owner can update paid status".to_string());
         }
 
-        let existing = order
-            .state
-            .items
-            .items
-            .get(target_user)
-            .ok_or_else(|| "Item not found".to_string())?
-            .clone();
+        // Start from current paid map
+        let mut paid_map = order.state.paid.paid.values.clone();
+        paid_map.insert(*target_user, paid);
+        let new_paid = Paid {
+            values: paid_map,
+            paid_version: order.state.paid.paid.paid_version + 1,
+        };
+        order.state.paid = AuthorizedPaidV1::new(new_paid, creator_key);
 
-        let updated =
-            existing.with_paid_status(paid, existing.version + 1, target_user, creator_key);
-        order.state.items.items.insert(target_user.clone(), updated);
         self.save();
         Ok(())
     }
 
-    /// Update order name (creator only)
+    /// Update order name (owner only)
     pub fn update_order_name(
         &mut self,
         order_id: &str,
@@ -284,17 +312,17 @@ impl AppState {
             .get_mut(order_id)
             .ok_or_else(|| "Order not found".to_string())?;
 
-        // Verify caller is creator
+        // Verify caller is owner
         let params = order.params.to_params()?;
-        if creator_key.verifying_key() != params.creator {
-            return Err("Only creator can update order name".to_string());
+        if creator_key.verifying_key() != params.owner {
+            return Err("Only owner can update order name".to_string());
         }
 
-        order.state.config.name = name;
-        order.state.config.version += 1;
-
-        let message = order.state.config.signing_message();
-        order.state.config.signature = Some(creator_key.sign(&message));
+        let new_order = Order {
+            name,
+            order_version: order.state.order.order.order_version + 1,
+        };
+        order.state.order = AuthorizedOrderV1::new(new_order, creator_key);
 
         self.save();
         Ok(())

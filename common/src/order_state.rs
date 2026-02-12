@@ -3,15 +3,17 @@ mod items;
 mod version;
 mod paid;
 
+// Re-export commonly used types
+pub use order::{AuthorizedOrderV1, Order};
+pub use items::{ItemsV1, AuthorizedItemV1, ItemV1, ItemContentV1};
+pub use paid::{AuthorizedPaidV1, Paid};
+
 use chrono::{DateTime, Utc};
-use crate::order_state::order::AuthorizedOrderV1;
-use crate::order_state::items::ItemsV1;
 use crate::order_state::version::StateVersion;
 
 use ed25519_dalek::VerifyingKey;
 use freenet_scaffold_macro::composable;
 use serde::{Deserialize, Serialize};
-use crate::order_state::paid::AuthorizedPaidV1;
 
 #[composable]
 #[derive(Serialize, Deserialize, Clone, Default, PartialEq, Debug)]

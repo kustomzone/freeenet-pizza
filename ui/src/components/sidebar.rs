@@ -31,12 +31,10 @@ pub fn Sidebar(
                     for order in orders.iter() {
                         {
                             let order_id = order.id.clone();
-                            let order_name = order.state.config.name.clone();
+                            let order_name = order.state.order.order.name.clone();
                             let is_active = selected.as_ref() == Some(&order_id);
                             let item_count = order.state.items.items.len();
-                            let created = order.state.config.created_at
-                                .map(|dt| dt.format("%b %d").to_string())
-                                .unwrap_or_else(|| "Unknown".to_string());
+                            let created = order.params.created_at_rfc3339.clone();
 
                             rsx! {
                                 li {

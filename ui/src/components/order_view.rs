@@ -4,6 +4,8 @@
 
 use crate::services::{AppState, PizzaInvite, UserIdentity};
 use dioxus::prelude::*;
+use ed25519_dalek::VerifyingKey;
+use pizza_common::order_state::ItemContentV1;
 
 #[component]
 pub fn OrderView(
@@ -31,38 +33,58 @@ pub fn OrderView(
         }
     };
 
-    let user_id = identity.read().user_id();
-    let is_creator = order.params.creator == identity.read().verifying_key().to_bytes();
+    let user_vk = identity.read().verifying_key();
+    let is_creator = order.params.owner == user_vk.to_bytes();
 
-    // Get user's existing item if any
-    let user_item = order.state.items.items.get(&user_id).cloned();
-
-    // Calculate totals
-    let total_cents: u64 = order.state.items.items.values().map(|i| i.price_cents).sum();
-    let paid_cents: u64 = order
-        .state
-        .items
-        .items
-        .values()
-        .filter(|i| i.paid)
-        .map(|i| i.price_cents)
-        .sum();
-
-    let order_name = order.state.config.name.clone();
-    let created_at = order
-        .state
-        .config
-        .created_at
-        .map(|dt| dt.format("%B %d, %Y at %H:%M").to_string())
-        .unwrap_or_else(|| "Unknown".to_string());
-
-    // Clone items for iteration
-    let items: Vec<_> = order
+    // Extract user's existing item if any
+    let user_item = order
         .state
         .items
         .items
         .iter()
-        .map(|(k, v)| (k.clone(), v.clone()))
+        .find_map(|ai| match &ai.item.content {
+            ItemContentV1::Item { display_name, order, price_cents } if ai.item.signed_by == user_vk => {
+                Some((display_name.clone(), order.clone(), *price_cents))
+            }
+            _ => None,
+        });
+
+    // Calculate totals
+    let total_cents: u64 = order
+        .state
+        .items
+        .items
+        .iter()
+        .filter_map(|ai| match &ai.item.content { ItemContentV1::Item { price_cents, .. } => Some(*price_cents), _ => None })
+        .sum();
+
+    let paid_cents: u64 = order
+        .state
+        .items
+        .items
+        .iter()
+        .filter_map(|ai| match &ai.item.content {
+            ItemContentV1::Item { price_cents, .. } => {
+                let paid = order.state.paid.paid.values.get(&ai.item.signed_by).copied().unwrap_or(false);
+                if paid { Some(*price_cents) } else { None }
+            }
+            _ => None,
+        })
+        .sum();
+
+    let order_name = order.state.order.order.name.clone();
+    let created_at = order.params.created_at_rfc3339.clone();
+
+    // Prepare items for iteration: (user_key, display_name, order_text, price_cents)
+    let items: Vec<(VerifyingKey, String, String, u64)> = order
+        .state
+        .items
+        .items
+        .iter()
+        .filter_map(|ai| match &ai.item.content {
+            ItemContentV1::Item { display_name, order, price_cents } => Some((ai.item.signed_by, display_name.clone(), order.clone(), *price_cents)),
+            _ => None,
+        })
         .collect();
     let items_count = items.len();
 
@@ -173,7 +195,7 @@ pub fn OrderView(
                                     label { "Display Name" }
                                     input {
                                         r#type: "text",
-                                        value: "{item.display_name}",
+                                        value: "{item.0}",
                                         oninput: move |e| display_name.set(e.value()),
                                     }
                                 }
@@ -181,7 +203,7 @@ pub fn OrderView(
                                     label { "Price" }
                                     input {
                                         r#type: "text",
-                                        value: "{format_price(item.price_cents)}",
+                                        value: "{format_price(item.2)}",
                                         oninput: move |e| price_input.set(e.value()),
                                     }
                                 }
@@ -189,7 +211,7 @@ pub fn OrderView(
                             div { class: "form-group",
                                 label { "Order" }
                                 textarea {
-                                    value: "{item.order}",
+                                    value: "{item.1}",
                                     oninput: move |e| order_text.set(e.value()),
                                 }
                             }
@@ -211,10 +233,10 @@ pub fn OrderView(
                         // Display current order
                         div { style: "display: flex; justify-content: space-between; align-items: start;",
                             div {
-                                p { strong { "{item.display_name}" } " - {item.order}" }
+                                p { strong { "{item.0}" } " - {item.1}" }
                                 p { style: "color: var(--text-muted);",
-                                    "Price: {format_price(item.price_cents)}"
-                                    if item.paid {
+                                    "Price: {format_price(item.2)}"
+                                    if order.state.paid.paid.values.get(&user_vk).copied().unwrap_or(false) {
                                         span { class: "status-badge paid", style: "margin-left: 10px;",
                                             "Paid"
                                         }
@@ -344,18 +366,18 @@ pub fn OrderView(
                             }
                         }
                         tbody {
-                            for (user_key, item) in items.iter() {
+                            for (user_key, dn, ord, price_cents) in items.iter() {
                                 {
                                     let user_key_clone = user_key.clone();
-                                    let is_own = *user_key == user_id;
-                                    let item_paid = item.paid;
+                                    let is_own = *user_key == user_vk;
+                                    let item_paid = order.state.paid.paid.values.get(user_key).copied().unwrap_or(false);
                                     let order_id_for_paid = order_id.clone();
 
                                     rsx! {
                                         tr {
-                                            key: "{item.display_name}-{item.version}",
+                                            key: "{dn}-{price_cents}",
                                             td {
-                                                "{item.display_name}"
+                                                "{dn}"
                                                 if is_own {
                                                     span {
                                                         style: "margin-left: 8px; font-size: 0.8em; color: var(--secondary-color);",
@@ -363,8 +385,8 @@ pub fn OrderView(
                                                     }
                                                 }
                                             }
-                                            td { "{item.order}" }
-                                            td { class: "price-cell", "{format_price(item.price_cents)}" }
+                                            td { "{ord}" }
+                                            td { class: "price-cell", "{format_price(*price_cents)}" }
                                             td { class: "checkbox-cell",
                                                 input {
                                                     class: "paid-checkbox",

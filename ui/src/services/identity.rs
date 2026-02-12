@@ -4,7 +4,6 @@
 //! In a full implementation, this would communicate with a Freenet delegate.
 
 use ed25519_dalek::{SigningKey, VerifyingKey};
-use pizza_common::UserIdKey;
 use std::cell::RefCell;
 
 thread_local! {
@@ -30,10 +29,6 @@ impl UserIdentity {
         self.signing_key.verifying_key()
     }
 
-    /// Get the user ID key for use in state
-    pub fn user_id(&self) -> UserIdKey {
-        UserIdKey::from(&self.verifying_key())
-    }
 
     /// Get the signing key for operations
     pub fn signing_key(&self) -> &SigningKey {
