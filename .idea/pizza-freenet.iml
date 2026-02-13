@@ -6,6 +6,8 @@
       <sourceFolder url="file://$MODULE_DIR$/contracts/pizza-contract/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/delegates/pizza-delegate/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/ui/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/contracts/web-container-contract/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/web-container-tool/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>
     <orderEntry type="inheritedJdk" />

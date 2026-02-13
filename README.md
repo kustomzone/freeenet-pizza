@@ -11,24 +11,6 @@ A decentralized pizza ordering application built on Freenet. Allows groups to co
 - CRDT-based state synchronization for eventual consistency
 - Dioxus-based reactive web UI
 
-## Project Structure
-
-```
-pizza-freenet/
-├── common/                    # Shared types between contract and UI
-│   └── src/
-│       ├── state.rs          # State structures + ComposableState trait
-│       └── operations.rs     # Signed operation types
-├── contracts/pizza-contract/ # Freenet contract (WASM)
-│   └── src/lib.rs           # ContractInterface implementation
-├── ui/                       # Dioxus web frontend
-│   ├── assets/main.css      # Styling
-│   └── src/
-│       ├── components/      # UI components
-│       └── services/        # State management & identity
-└── delegates/               # (Future: Freenet delegate for key management)
-```
-
 ## Prerequisites
 
 ### Option 1: Using Nix (Recommended)
