@@ -4,6 +4,12 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use std::process::Command;
 
+macro_rules! println {
+    ($($arg:tt)*) => {
+        std::println!("\x1b[35m{}\x1b[0m", format_args!($($arg)*));
+    };
+}
+
 pub const PROJECT: &str = "pizza-freenet";
 
 fn default_storage_path(file: &str) -> PathBuf {
@@ -27,7 +33,7 @@ enum Commands {
     /// Deploy the application
     Deploy {
         /// Version number
-        #[arg(long, short, default_value = "0")]
+        #[arg(long, short, default_value = "1")]
         version: u32,
     },
     /// Launch application in development mode
@@ -60,9 +66,7 @@ fn cargo_bin_or_path(cmd: &str) -> String {
     home.push(cmd);
     if !home.exists() {
         println!("fdev not found, installing...");
-        if let Err(e) = execute(Command::new("cargo").args(["install", "fdev"])) {
-            eprintln!("Warning: failed to install fdev: {}", e);
-        }
+        execute(Command::new("cargo").args(["install", "fdev"]));
     }
     home.to_string_lossy().to_string()
 }
@@ -150,6 +154,7 @@ fn deploy(version: u32) -> Result<(), Box<dyn Error>> {
 fn initial_web_deploy() -> Result<(), Box<dyn Error>> {
     println!("Performing initial web deployment...");
 
+    // NOTE: this means all folders needed already exist after this
     let keys_path = default_storage_path("web-container-keys.toml");
     if !keys_path.exists() {
         web_container_generate()?;
@@ -157,15 +162,19 @@ fn initial_web_deploy() -> Result<(), Box<dyn Error>> {
 
     cargo_build("web-container-contract")?;
 
-    let contract_wasm = PathBuf::from("target/wasm32-unknown-unknown/release/web_container_contract.wasm");
+    let contract_wasm_src = PathBuf::from("target/wasm32-unknown-unknown/release/web_container_contract.wasm");
+    let contract_wasm = default_storage_path("web.contract.wasm");
+    std::fs::copy(contract_wasm_src, &contract_wasm)?;
     let webapp_archive = default_storage_path("webapp.bootstrap.tar.xz");
-    if let Some(parent) = webapp_archive.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
     // Create an empty .tar.xz archive
     let file = std::fs::File::create(&webapp_archive)?;
     let enc = xz2::write::XzEncoder::new(file, 6);
     let mut tar = tar::Builder::new(enc);
+    let mut header = tar::Header::new_gnu();
+    let content = b"<tt>wip</tt>";
+    header.set_size(content.len() as u64);
+    header.set_mode(0o644);
+    tar.append_data(&mut header, "index.html", &content[..])?;
     tar.finish()?;
     let webapp_metadata = default_storage_path("webapp.metadata");
     let webapp_parameters = default_storage_path("webapp.parameters");
@@ -174,7 +183,7 @@ fn initial_web_deploy() -> Result<(), Box<dyn Error>> {
         webapp_archive.clone(),
         webapp_metadata.clone(),
         webapp_parameters.clone(),
-        0
+        1
     )?;
 
     fdev_publish(
