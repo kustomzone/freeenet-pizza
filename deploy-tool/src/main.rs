@@ -32,12 +32,15 @@ enum Commands {
     },
     /// Launch application in development mode
     Dev {},
+    /// Initial deployment of the webapp
+    InitialWebDeploy {},
 }
 
 fn cargo_build(package: &str) -> Result<(), Box<dyn Error>> {
     println!("Building package: {}", package);
+    let mut args = vec!["build", "--release", "--target", "wasm32-unknown-unknown", "--package", package];
     let status = Command::new("cargo")
-        .args(["build", "--release", "--package", package])
+        .args(args)
         .status()?;
 
     if !status.success() {
@@ -79,6 +82,54 @@ fn web_container_sign(
     Ok(())
 }
 
+fn web_container_generate() -> Result<(), Box<dyn Error>> {
+    println!("Generating web container keys...");
+    let status = Command::new("cargo")
+        .args([
+            "run",
+            "--bin",
+            "web-container-tool",
+            "--",
+            "generate",
+        ])
+        .status()?;
+
+    if !status.success() {
+        return Err("web-container-tool generate failed".into());
+    }
+
+    Ok(())
+}
+
+fn fdev_publish(
+    contract_wasm: PathBuf,
+    webapp_parameters: PathBuf,
+    webapp_archive: PathBuf,
+    webapp_metadata: PathBuf,
+) -> Result<(), Box<dyn Error>> {
+    println!("Publishing contract...");
+    let status = Command::new("fdev")
+        .args([
+            "publish",
+            "--code",
+            &contract_wasm.to_string_lossy(),
+            "--parameters",
+            &webapp_parameters.to_string_lossy(),
+            "contract",
+            "--webapp-archive",
+            &webapp_archive.to_string_lossy(),
+            "--webapp-metadata",
+            &webapp_metadata.to_string_lossy(),
+        ])
+        .status()?;
+
+    if !status.success() {
+        return Err("fdev publish failed".into());
+    }
+
+    Ok(())
+}
+
 fn dev() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
@@ -94,10 +145,44 @@ fn deploy(version: u32) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+fn initial_web_deploy() -> Result<(), Box<dyn Error>> {
+    println!("Performing initial web deployment...");
+
+    let keys_path = default_storage_path("web-container-keys.toml");
+    if !keys_path.exists() {
+        web_container_generate()?;
+    }
+
+    cargo_build("web-container-contract")?;
+
+    let contract_wasm = PathBuf::from("target/wasm32-unknown-unknown/release/web_container_contract.wasm");
+    // FIXME: write file webapp.bootstrap.xz with content "bootstrap"
+    let webapp_archive = default_storage_path("webapp.bootstrap.xz");
+    let webapp_metadata = default_storage_path("webapp.metadata");
+    let webapp_parameters = default_storage_path("webapp.parameters");
+
+    web_container_sign(
+        webapp_archive.clone(),
+        webapp_metadata.clone(),
+        webapp_parameters.clone(),
+        0
+    )?;
+
+    fdev_publish(
+        contract_wasm,
+        webapp_parameters,
+        webapp_archive,
+        webapp_metadata,
+    )?;
+
+    Ok(())
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let cli = Cli::parse();
     match cli.command {
         Commands::Deploy { version } => deploy(version),
         Commands::Dev {} => dev(),
+        Commands::InitialWebDeploy {} => initial_web_deploy(),
     }
 }
