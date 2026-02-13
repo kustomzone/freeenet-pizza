@@ -7,6 +7,7 @@ members = [
     "delegates/pizza-delegate",
     "ui",
     "web-container-tool",
+    "deploy-tool"
 ]
 
 [workspace.package]
