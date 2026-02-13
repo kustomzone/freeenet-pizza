@@ -36,18 +36,41 @@ enum Commands {
     InitialWebDeploy {},
 }
 
+fn execute(cmd: &mut Command) -> Result<(), Box<dyn Error>> {
+    println!("Running: {:?}", cmd);
+    let status = cmd.status()?;
+    if !status.success() {
+        return Err(format!("Command {:?} failed with status: {}", cmd, status).into());
+    }
+    Ok(())
+}
+
+fn cargo_bin_or_path(cmd: &str) -> String {
+    if let Ok(path) = std::env::var("PATH") {
+        for p in std::env::split_paths(&path) {
+            let bin_path = p.join(cmd);
+            if bin_path.exists() {
+                return cmd.to_string();
+            }
+        }
+    }
+    let mut home = dirs::home_dir().expect("Could not find home directory");
+    home.push(".cargo");
+    home.push("bin");
+    home.push(cmd);
+    if !home.exists() {
+        println!("fdev not found, installing...");
+        if let Err(e) = execute(Command::new("cargo").args(["install", "fdev"])) {
+            eprintln!("Warning: failed to install fdev: {}", e);
+        }
+    }
+    home.to_string_lossy().to_string()
+}
+
 fn cargo_build(package: &str) -> Result<(), Box<dyn Error>> {
     println!("Building package: {}", package);
     let args = vec!["build", "--release", "--target", "wasm32-unknown-unknown", "--package", package];
-    let status = Command::new("cargo")
-        .args(args)
-        .status()?;
-
-    if !status.success() {
-        return Err(format!("cargo build failed for package {}", package).into());
-    }
-
-    Ok(())
+    execute(Command::new("cargo").args(args))
 }
 
 fn web_container_sign(
@@ -57,7 +80,7 @@ fn web_container_sign(
     version: u32,
 ) -> Result<(), Box<dyn Error>> {
     println!("Signing web container: {} -> {}", input.display(), output.display());
-    let status = Command::new("cargo")
+    execute(Command::new("cargo")
         .args([
             "run",
             "--bin",
@@ -72,33 +95,19 @@ fn web_container_sign(
             &parameters.to_string_lossy(),
             "--version",
             &version.to_string(),
-        ])
-        .status()?;
-
-    if !status.success() {
-        return Err("web-container-tool sign failed".into());
-    }
-
-    Ok(())
+        ]))
 }
 
 fn web_container_generate() -> Result<(), Box<dyn Error>> {
     println!("Generating web container keys...");
-    let status = Command::new("cargo")
+    execute(Command::new("cargo")
         .args([
             "run",
             "--bin",
             "web-container-tool",
             "--",
             "generate",
-        ])
-        .status()?;
-
-    if !status.success() {
-        return Err("web-container-tool generate failed".into());
-    }
-
-    Ok(())
+        ]))
 }
 
 fn fdev_publish(
@@ -108,7 +117,7 @@ fn fdev_publish(
     webapp_metadata: PathBuf,
 ) -> Result<(), Box<dyn Error>> {
     println!("Publishing contract...");
-    let status = Command::new("fdev")
+    execute(Command::new(cargo_bin_or_path("fdev"))
         .args([
             "publish",
             "--code",
@@ -120,14 +129,7 @@ fn fdev_publish(
             &webapp_archive.to_string_lossy(),
             "--webapp-metadata",
             &webapp_metadata.to_string_lossy(),
-        ])
-        .status()?;
-
-    if !status.success() {
-        return Err("fdev publish failed".into());
-    }
-
-    Ok(())
+        ]))
 }
 
 fn dev() -> Result<(), Box<dyn Error>> {
