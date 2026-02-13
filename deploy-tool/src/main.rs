@@ -56,7 +56,7 @@ fn cargo_bin_or_path(cmd: &str) -> String {
         for p in std::env::split_paths(&path) {
             let bin_path = p.join(cmd);
             if bin_path.exists() {
-                return cmd.to_string();
+                return bin_path.to_str().unwrap().into();
             }
         }
     }
@@ -66,7 +66,7 @@ fn cargo_bin_or_path(cmd: &str) -> String {
     home.push(cmd);
     if !home.exists() {
         println!("fdev not found, installing...");
-        execute(Command::new("cargo").args(["install", "fdev"]));
+        execute(Command::new("cargo").args(["install", "fdev"])).unwrap();
     }
     home.to_string_lossy().to_string()
 }
@@ -141,12 +141,36 @@ fn dev() -> Result<(), Box<dyn Error>> {
 }
 
 fn deploy(version: u32) -> Result<(), Box<dyn Error>> {
-    cargo_build("pizza-contract")?;
     cargo_build("pizza-ui")?;
 
-    let input = PathBuf::from("webapp-bootstrap.tar.xz");
-    let output = default_storage_path("webapp.metadata");
-    web_container_sign(input, output, default_storage_path("webapp.parameters"), version)?;
+    let contract_wasm = default_storage_path("web.contract.wasm");
+    let webapp_archive = default_storage_path("webapp.bootstrap.tar.xz");
+    // Create an empty .tar.xz archive
+    let file = std::fs::File::create(&webapp_archive)?;
+    let enc = xz2::write::XzEncoder::new(file, 6);
+    let mut tar = tar::Builder::new(enc);
+    let mut header = tar::Header::new_gnu();
+    let content = b"<tt>wip</tt>";
+    header.set_size(content.len() as u64);
+    header.set_mode(0o644);
+    tar.append_data(&mut header, "index.html", &content[..])?;
+    tar.finish()?;
+    let webapp_metadata = default_storage_path("webapp.metadata");
+    let webapp_parameters = default_storage_path("webapp.parameters");
+
+    web_container_sign(
+        webapp_archive.clone(),
+        webapp_metadata.clone(),
+        webapp_parameters.clone(),
+        version
+    )?;
+
+    fdev_publish(
+        contract_wasm,
+        webapp_parameters,
+        webapp_archive,
+        webapp_metadata,
+    )?;
 
     Ok(())
 }
