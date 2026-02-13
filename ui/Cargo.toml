@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 pizza-common = { path = "../common" }
+freenet-stdlib = { workspace = true, features = ["net"] }
 
 # UI Framework
 dioxus = { version = "0.7", features = ["web"] }
@@ -34,7 +35,10 @@ serde_json = "1"
 ciborium.workspace = true
 
 # Crypto
-ed25519-dalek.workspace = true
+curve25519-dalek.workspace = true
+x25519-dalek.workspace = true
+# We can use rand_core in the UI crate because the wasm runs in a browser
+ed25519-dalek = { workspace = true, features = ["rand_core"] }
 rand = { version = "0.8", features = ["getrandom"] }
 getrandom = { version = "0.2", features = ["js"] }
 

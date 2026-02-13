@@ -3,8 +3,10 @@ resolver = "2"
 members = [
     "common",
     "contracts/pizza-contract",
+    "contracts/web-container-contract",
     "delegates/pizza-delegate",
     "ui",
+    "web-container-tool",
 ]
 
 [workspace.package]
@@ -15,10 +17,15 @@ edition = "2021"
 # Serialization
 serde = { version = "1", features = ["derive"] }
 ciborium = "0.2"
+byteorder = "1"
 
-# Crypto
-ed25519-dalek = { version = "2", features = ["serde", "rand_core"] }
-blake3 = "1"
+# Cryptography
+ed25519-dalek = { version = "2.1.1", default-features = false, features = ["alloc", "serde"] }
+# For WASM contracts that only need verification
+ed25519-compact = { version = "2.1.1", default-features = false, features = ["std"] }
+blake3 = { version = "1.5.3", features = ["serde"] }
+x25519-dalek = { version = "2.0.0", features = ["static_secrets"] }
+curve25519-dalek = { version = "4.1.3" }
 rand = { version = "0.8.5", features = ["getrandom"], default-features = true }
 
 # Time
