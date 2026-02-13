@@ -35,38 +35,19 @@ impl UserIdentity {
         &self.signing_key
     }
 
-    /// Load or create identity from local storage
+    /// Load or create identity. 
+    /// In a full Freenet implementation, this would fetch from the delegate.
     pub fn load_or_create() -> Self {
-        // Try to load from localStorage
-        if let Some(window) = web_sys::window() {
-            if let Ok(Some(storage)) = window.local_storage() {
-                if let Ok(Some(key_hex)) = storage.get_item("pizza_identity") {
-                    if let Ok(key_bytes) = hex_decode(&key_hex) {
-                        if key_bytes.len() == 32 {
-                            let mut bytes = [0u8; 32];
-                            bytes.copy_from_slice(&key_bytes);
-                            let signing_key = SigningKey::from_bytes(&bytes);
-                            return UserIdentity { signing_key };
-                        }
-                    }
-                }
-            }
-        }
-
-        // Generate new identity and save
-        let identity = Self::generate();
-        identity.save();
-        identity
+        // Since we are refactoring to Freenet, we no longer use localstorage.
+        // For now, we generate a new identity for the session.
+        // A complete implementation would use the Freenet delegate to persist and retrieve the user's identity.
+        Self::generate()
     }
 
-    /// Save identity to local storage
+    /// Save identity.
     pub fn save(&self) {
-        if let Some(window) = web_sys::window() {
-            if let Ok(Some(storage)) = window.local_storage() {
-                let key_hex = hex_encode(self.signing_key.as_bytes());
-                let _ = storage.set_item("pizza_identity", &key_hex);
-            }
-        }
+        // No-op for now as we removed localstorage.
+        // Integration with delegate for persistence should be done via FreenetService.
     }
 }
 

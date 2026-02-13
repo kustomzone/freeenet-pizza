@@ -28,29 +28,17 @@ pub struct InviteStore {
 }
 
 impl InviteStore {
-    /// Load invites from local storage
+    /// Load invites.
+    /// In a real Freenet app, these would be managed by a delegate.
     pub fn load() -> Self {
-        if let Some(window) = web_sys::window() {
-            if let Ok(Some(storage)) = window.local_storage() {
-                if let Ok(Some(json)) = storage.get_item("pizza_invites") {
-                    if let Ok(store) = serde_json::from_str(&json) {
-                        return store;
-                    }
-                }
-            }
-        }
+        // Since we are refactoring away from localstorage, we'll start empty.
+        // In a next step, we would fetch these from the Freenet node.
         InviteStore::default()
     }
 
-    /// Save invites to local storage
+    /// Save invites.
     pub fn save(&self) {
-        if let Some(window) = web_sys::window() {
-            if let Ok(Some(storage)) = window.local_storage() {
-                if let Ok(json) = serde_json::to_string(self) {
-                    let _ = storage.set_item("pizza_invites", &json);
-                }
-            }
-        }
+        // No-op for now as we removed localstorage.
     }
 
     /// Add a pending invite

@@ -3,6 +3,7 @@
 use crate::components::{InviteDialog, NewOrderDialog, OrderView, Sidebar};
 use crate::services::{
     check_url_for_invite, clear_invite_from_url, init_identity, AppState, InviteStore, PizzaInvite,
+    FreenetService, HostResponse,
 };
 use dioxus::prelude::*;
 
@@ -15,7 +16,37 @@ pub fn App() -> Element {
     let identity = use_signal(|| init_identity());
 
     // Application state
-    let mut app_state = use_signal(|| AppState::load());
+    let mut app_state = use_signal(|| AppState::new());
+
+    // Freenet service
+    let mut _freenet = use_signal(|| None::<FreenetService>);
+
+    use_effect(move || {
+        if _freenet.read().is_none() {
+            let mut app_state = app_state;
+            let mut _freenet = _freenet;
+            if let Ok(f) = FreenetService::new("ws://localhost:7509/ws", EventHandler::new(move |resp| {
+                match resp {
+                    HostResponse::ContractUpdate { key, state } => {
+                        app_state.write().update_from_freenet(key, state.0);
+                    }
+                    HostResponse::UpdateResponse { key, .. } => {
+                        log::debug!("Update successful for {:?}", key);
+                    }
+                    HostResponse::PutResponse { key } => {
+                        log::debug!("Put successful for {:?}", key);
+                    }
+                    HostResponse::Err { error } => {
+                        log::error!("Freenet error: {}", error);
+                    }
+                    _ => {}
+                }
+            })) {
+                app_state.write().set_freenet(f.clone());
+                _freenet.set(Some(f));
+            }
+        }
+    });
 
     // Invite store
     let mut invite_store = use_signal(|| InviteStore::load());

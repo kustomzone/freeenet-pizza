@@ -1,13 +1,12 @@
 //! Application State Service
 //!
 //! Manages pizza orders and synchronizes with Freenet contracts.
-//! Currently uses local storage as a mock backend.
 
-use crate::services::PizzaInvite;
+use crate::services::{PizzaInvite, FreenetService, ClientRequest, ContractKey, WrappedState, WrappedDelta, ContractContainer};
 use chrono::{DateTime, Utc};
-use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
+use ed25519_dalek::{SigningKey, VerifyingKey};
 use pizza_common::{
-    FullOrderStateV1, OrderParametersV1,
+    FullOrderStateV1, OrderParametersV1, ComposableState,
 };
 use pizza_common::order_state::{AuthorizedOrderV1, Order, ItemsV1, AuthorizedItemV1, ItemV1, ItemContentV1, AuthorizedPaidV1, Paid};
 use serde::{Deserialize, Serialize};
@@ -52,34 +51,44 @@ impl From<&OrderParametersV1> for OrderParametersSerde {
     }
 }
 
-/// Application state stored in local storage
+/// Application state
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AppState {
     pub orders: BTreeMap<String, PizzaOrder>,
+    #[serde(skip)]
+    pub freenet: Option<FreenetService>,
 }
 
 impl AppState {
-    /// Load state from local storage
-    pub fn load() -> Self {
-        if let Some(window) = web_sys::window() {
-            if let Ok(Some(storage)) = window.local_storage() {
-                if let Ok(Some(json)) = storage.get_item("pizza_orders") {
-                    if let Ok(state) = serde_json::from_str(&json) {
-                        return state;
-                    }
-                }
-            }
-        }
+    /// Initialize AppState with FreenetService
+    pub fn new() -> Self {
         AppState::default()
     }
 
-    /// Save state to local storage
-    pub fn save(&self) {
-        if let Some(window) = web_sys::window() {
-            if let Ok(Some(storage)) = window.local_storage() {
-                if let Ok(json) = serde_json::to_string(self) {
-                    let _ = storage.set_item("pizza_orders", &json);
-                }
+    pub fn set_freenet(&mut self, freenet: FreenetService) {
+        self.freenet = Some(freenet);
+    }
+
+    /// Update order state from Freenet
+    pub fn update_from_freenet(&mut self, key: ContractKey, state_bytes: Vec<u8>) {
+        if let Ok(state) = ciborium::de::from_reader::<FullOrderStateV1, &[u8]>(&state_bytes) {
+            // We need to find the order by key.
+            // For now, let's assume the key is the same as order id or we can derive it.
+            // In a real app, we'd have a mapping from ContractKey to OrderId.
+            if let Some(order) = self.orders.get_mut(&key.0) {
+                order.state = state;
+            } else {
+                // New order discovered via subscription?
+                // We don't have params yet, but we can create a placeholder
+                let order = PizzaOrder {
+                    id: key.0.clone(),
+                    params: OrderParametersSerde {
+                        owner: [0u8; 32],
+                        created_at_rfc3339: Utc::now().to_rfc3339(),
+                    },
+                    state,
+                };
+                self.orders.insert(key.0, order);
             }
         }
     }
@@ -108,21 +117,32 @@ impl AppState {
         let order = PizzaOrder {
             id: id.clone(),
             params: OrderParametersSerde::from(&params),
-            state,
+            state: state.clone(),
         };
 
         self.orders.insert(id.clone(), order);
-        self.save();
+
+        // Push to Freenet
+        if let Some(freenet) = &self.freenet {
+            let mut state_bytes = vec![];
+            let _ = ciborium::ser::into_writer(&state, &mut state_bytes);
+            let mut params_bytes = vec![];
+            let _ = ciborium::ser::into_writer(&params, &mut params_bytes);
+
+            let _ = freenet.send(ClientRequest::Put {
+                contract: ContractContainer {
+                    data: vec![], // In real Freenet, this would be the contract code WASM
+                    parameters: params_bytes,
+                },
+                state: WrappedState(state_bytes),
+            });
+        }
+
         id
     }
 
     /// Create an order from an invite (joining an existing order)
     pub fn create_order_from_invite(&mut self, invite: &PizzaInvite, _user_key: &SigningKey) {
-        // In a real Freenet implementation, this would:
-        // 1. Subscribe to the contract using the order id
-        // 2. Fetch the current state from the network
-        // For now, we create a placeholder order
-
         let order_id = invite.order_id.clone();
 
         let params = OrderParametersSerde {
@@ -140,8 +160,14 @@ impl AppState {
             state,
         };
 
-        self.orders.insert(order_id, order);
-        self.save();
+        self.orders.insert(order_id.clone(), order);
+        
+        // Subscribe to Freenet
+        if let Some(freenet) = &self.freenet {
+            let _ = freenet.send(ClientRequest::Subscribe {
+                key: ContractKey(order_id),
+            });
+        }
     }
 
     /// Add an item to an order
@@ -153,49 +179,80 @@ impl AppState {
         price_cents: u64,
         user_key: &SigningKey,
     ) -> Result<(), String> {
-        let order = self
-            .orders
-            .get_mut(order_id)
-            .ok_or_else(|| "Order not found".to_string())?;
-
         let user_vk = user_key.verifying_key();
+        
+        let next_state = {
+            let order = self
+                .orders
+                .get(order_id)
+                .ok_or_else(|| "Order not found".to_string())?;
 
-        // Determine next version for this user's item
-        let next_version = order
-            .state
-            .items
-            .items
-            .iter()
-            .find(|it| it.item.signed_by == user_vk)
-            .map(|it| it.item.version + 1)
-            .unwrap_or(1);
+            // Determine next version for this user's item
+            let next_version = order
+                .state
+                .items
+                .items
+                .iter()
+                .find(|it| it.item.signed_by == user_vk)
+                .map(|it| it.item.version + 1)
+                .unwrap_or(1);
 
-        let item = ItemV1 {
-            signed_by: user_vk,
-            owner_sign: false,
-            version: next_version,
-            content: ItemContentV1::Item {
-                display_name,
-                order: order_text,
-                price_cents,
-            },
+            let item = ItemV1 {
+                signed_by: user_vk,
+                owner_sign: false,
+                version: next_version,
+                content: ItemContentV1::Item {
+                    display_name,
+                    order: order_text,
+                    price_cents,
+                },
+            };
+            let auth_item = AuthorizedItemV1::new(item, user_key);
+
+            let mut next_state = order.state.clone();
+
+            // Replace existing entry for this user or push new
+            if let Some(pos) = next_state
+                .items
+                .items
+                .iter()
+                .position(|it| it.item.signed_by == user_vk)
+            {
+                next_state.items.items[pos] = auth_item;
+            } else {
+                next_state.items.items.push(auth_item);
+            }
+            next_state
         };
-        let auth_item = AuthorizedItemV1::new(item, user_key);
 
-        // Replace existing entry for this user or push new
-        if let Some(pos) = order
-            .state
-            .items
-            .items
-            .iter()
-            .position(|it| it.item.signed_by == user_vk)
-        {
-            order.state.items.items[pos] = auth_item;
-        } else {
-            order.state.items.items.push(auth_item);
+        // Push to Freenet
+        let old_state = self.orders.get(order_id).unwrap().state.clone();
+        self.push_update(order_id, &old_state, &next_state)?;
+
+        // Optimistically update local state
+        if let Some(order) = self.orders.get_mut(order_id) {
+            order.state = next_state;
         }
 
-        self.save();
+        Ok(())
+    }
+
+    /// Push an update to Freenet
+    pub fn push_update(&self, order_id: &str, old_state: &FullOrderStateV1, new_state: &FullOrderStateV1) -> Result<(), String> {
+        if let Some(freenet) = &self.freenet {
+            let order = self.orders.get(order_id).ok_or("Order not found")?;
+            let params = order.params.to_params()?;
+            let summary = old_state.summarize(old_state, &params);
+            if let Some(delta) = new_state.delta(old_state, &params, &summary) {
+                let mut delta_bytes = vec![];
+                ciborium::ser::into_writer(&delta, &mut delta_bytes).map_err(|e| e.to_string())?;
+                
+                freenet.send(ClientRequest::Update {
+                    key: ContractKey(order_id.to_string()),
+                    delta: WrappedDelta(delta_bytes),
+                }).map_err(|e| format!("{:?}", e))?;
+            }
+        }
         Ok(())
     }
 
@@ -208,63 +265,100 @@ impl AppState {
         price_cents: Option<u64>,
         user_key: &SigningKey,
     ) -> Result<(), String> {
-        let order = self
-            .orders
-            .get_mut(order_id)
-            .ok_or_else(|| "Order not found".to_string())?;
-
         let user_vk = user_key.verifying_key();
 
-        let pos = order
-            .state
-            .items
-            .items
-            .iter()
-            .position(|it| it.item.signed_by == user_vk)
-            .ok_or_else(|| "Item not found".to_string())?;
+        let next_state = {
+            let order = self
+                .orders
+                .get(order_id)
+                .ok_or_else(|| "Order not found".to_string())?;
 
-        let existing = order.state.items.items[pos].clone();
+            let pos = order
+                .state
+                .items
+                .items
+                .iter()
+                .position(|it| it.item.signed_by == user_vk)
+                .ok_or_else(|| "Item not found".to_string())?;
 
-        // Build updated item content
-        let (mut disp, mut ord, mut price) = match existing.item.content {
-            ItemContentV1::Item { display_name, order, price_cents } => (display_name, order, price_cents),
-            ItemContentV1::Deleted { .. } => (String::new(), String::new(), 0),
+            let existing = order.state.items.items[pos].clone();
+
+            // Build updated item content
+            let (mut disp, mut ord, mut price) = match existing.item.content {
+                ItemContentV1::Item {
+                    display_name,
+                    order,
+                    price_cents,
+                } => (display_name, order, price_cents),
+                ItemContentV1::Deleted { .. } => (String::new(), String::new(), 0),
+            };
+            if let Some(v) = display_name {
+                disp = v;
+            }
+            if let Some(v) = order_text {
+                ord = v;
+            }
+            if let Some(v) = price_cents {
+                price = v;
+            }
+
+            let new_item = ItemV1 {
+                signed_by: user_vk,
+                owner_sign: false,
+                version: existing.item.version + 1,
+                content: ItemContentV1::Item {
+                    display_name: disp,
+                    order: ord,
+                    price_cents: price,
+                },
+            };
+            let auth_item = AuthorizedItemV1::new(new_item, user_key);
+
+            let mut next_state = order.state.clone();
+            next_state.items.items[pos] = auth_item;
+            next_state
         };
-        if let Some(v) = display_name { disp = v; }
-        if let Some(v) = order_text { ord = v; }
-        if let Some(v) = price_cents { price = v; }
 
-        let new_item = ItemV1 {
-            signed_by: user_vk,
-            owner_sign: false,
-            version: existing.item.version + 1,
-            content: ItemContentV1::Item { display_name: disp, order: ord, price_cents: price },
-        };
-        let auth_item = AuthorizedItemV1::new(new_item, user_key);
-        order.state.items.items[pos] = auth_item;
+        let old_state = self.orders.get(order_id).unwrap().state.clone();
+        self.push_update(order_id, &old_state, &next_state)?;
+        if let Some(order) = self.orders.get_mut(order_id) {
+            order.state = next_state;
+        }
 
-        self.save();
         Ok(())
     }
 
     /// Delete an item from an order
     pub fn delete_item(&mut self, order_id: &str, user_key: &SigningKey) -> Result<(), String> {
-        let order = self
-            .orders
-            .get_mut(order_id)
-            .ok_or_else(|| "Order not found".to_string())?;
-
         let user_vk = user_key.verifying_key();
-        if let Some(pos) = order
-            .state
-            .items
-            .items
-            .iter()
-            .position(|it| it.item.signed_by == user_vk)
-        {
-            order.state.items.items.remove(pos);
+        
+        let (old_state, next_state) = {
+            let order = self
+                .orders
+                .get(order_id)
+                .ok_or_else(|| "Order not found".to_string())?;
+
+            if let Some(pos) = order
+                .state
+                .items
+                .items
+                .iter()
+                .position(|it| it.item.signed_by == user_vk)
+            {
+                let mut next_state = order.state.clone();
+                next_state.items.items.remove(pos);
+                (Some(order.state.clone()), Some(next_state))
+            } else {
+                (None, None)
+            }
+        };
+
+        if let (Some(old), Some(next)) = (old_state, next_state) {
+            self.push_update(order_id, &old, &next)?;
+            if let Some(order) = self.orders.get_mut(order_id) {
+                order.state = next;
+            }
         }
-        self.save();
         Ok(())
     }
 
@@ -276,27 +370,36 @@ impl AppState {
         paid: bool,
         creator_key: &SigningKey,
     ) -> Result<(), String> {
-        let order = self
-            .orders
-            .get_mut(order_id)
-            .ok_or_else(|| "Order not found".to_string())?;
+        let (old_state, next_state) = {
+            let order = self
+                .orders
+                .get(order_id)
+                .ok_or_else(|| "Order not found".to_string())?;
 
-        // Verify caller is owner
-        let params = order.params.to_params()?;
-        if creator_key.verifying_key() != params.owner {
-            return Err("Only owner can update paid status".to_string());
+            // Verify caller is owner
+            let params = order.params.to_params()?;
+            if creator_key.verifying_key() != params.owner {
+                return Err("Only owner can update paid status".to_string());
+            }
+
+            // Start from current paid map
+            let mut paid_map = order.state.paid.paid.values.clone();
+            paid_map.insert(*target_user, paid);
+            let new_paid = Paid {
+                values: paid_map,
+                paid_version: order.state.paid.paid.paid_version + 1,
+            };
+
+            let mut next_state = order.state.clone();
+            next_state.paid = AuthorizedPaidV1::new(new_paid, creator_key);
+            (order.state.clone(), next_state)
+        };
+
+        self.push_update(order_id, &old_state, &next_state)?;
+        if let Some(order) = self.orders.get_mut(order_id) {
+            order.state = next_state;
         }
 
-        // Start from current paid map
-        let mut paid_map = order.state.paid.paid.values.clone();
-        paid_map.insert(*target_user, paid);
-        let new_paid = Paid {
-            values: paid_map,
-            paid_version: order.state.paid.paid.paid_version + 1,
-        };
-        order.state.paid = AuthorizedPaidV1::new(new_paid, creator_key);
-
-        self.save();
         Ok(())
     }
 
@@ -307,31 +410,39 @@ impl AppState {
         name: String,
         creator_key: &SigningKey,
     ) -> Result<(), String> {
-        let order = self
-            .orders
-            .get_mut(order_id)
-            .ok_or_else(|| "Order not found".to_string())?;
+        let (old_state, next_state) = {
+            let order = self
+                .orders
+                .get(order_id)
+                .ok_or_else(|| "Order not found".to_string())?;
 
-        // Verify caller is owner
-        let params = order.params.to_params()?;
-        if creator_key.verifying_key() != params.owner {
-            return Err("Only owner can update order name".to_string());
+            // Verify caller is owner
+            let params = order.params.to_params()?;
+            if creator_key.verifying_key() != params.owner {
+                return Err("Only owner can update order name".to_string());
+            }
+
+            let new_order = Order {
+                name,
+                order_version: order.state.order.order.order_version + 1,
+            };
+
+            let mut next_state = order.state.clone();
+            next_state.order = AuthorizedOrderV1::new(new_order, creator_key);
+            (order.state.clone(), next_state)
+        };
+
+        self.push_update(order_id, &old_state, &next_state)?;
+        if let Some(order) = self.orders.get_mut(order_id) {
+            order.state = next_state;
         }
 
-        let new_order = Order {
-            name,
-            order_version: order.state.order.order.order_version + 1,
-        };
-        order.state.order = AuthorizedOrderV1::new(new_order, creator_key);
-
-        self.save();
         Ok(())
     }
 
     /// Delete an order
     pub fn delete_order(&mut self, order_id: &str) {
         self.orders.remove(order_id);
-        self.save();
     }
 
     /// Get an order by ID
