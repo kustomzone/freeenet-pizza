@@ -164,16 +164,7 @@ fn deploy(version: u32) -> Result<(), Box<dyn Error>> {
     )?;
 
     let state_path = default_storage_path("webapp.state");
-    {
-        let metadata_bytes = std::fs::read(&webapp_metadata)?;
-        let webapp_bytes = std::fs::read(&webapp_archive)?;
-        let mut state = Vec::new();
-        state.write_u64::<BigEndian>(metadata_bytes.len() as u64)?;
-        state.extend_from_slice(&metadata_bytes);
-        state.write_u64::<BigEndian>(webapp_bytes.len() as u64)?;
-        state.extend_from_slice(&webapp_bytes);
-        std::fs::write(&state_path, state)?;
-    }
+    merge_state(&webapp_metadata, &webapp_archive, &state_path)?;
 
     fdev_publish(
         contract_wasm,
@@ -220,16 +211,7 @@ fn initial_web_deploy() -> Result<(), Box<dyn Error>> {
     )?;
 
     let state_path = default_storage_path("webapp.state");
-    {
-        let metadata_bytes = std::fs::read(&webapp_metadata)?;
-        let webapp_bytes = std::fs::read(&webapp_archive)?;
-        let mut state = Vec::new();
-        state.write_u64::<BigEndian>(metadata_bytes.len() as u64)?;
-        state.extend_from_slice(&metadata_bytes);
-        state.write_u64::<BigEndian>(webapp_bytes.len() as u64)?;
-        state.extend_from_slice(&webapp_bytes);
-        std::fs::write(&state_path, state)?;
-    }
+    merge_state(&webapp_metadata, &webapp_archive, &state_path)?;
 
     fdev_publish(
         contract_wasm,
@@ -237,6 +219,22 @@ fn initial_web_deploy() -> Result<(), Box<dyn Error>> {
         state_path,
     )?;
 
+    Ok(())
+}
+
+fn merge_state(
+    metadata_path: &PathBuf,
+    webapp_archive_path: &PathBuf,
+    output_state_path: &PathBuf,
+) -> Result<(), Box<dyn Error>> {
+    let metadata_bytes = std::fs::read(metadata_path)?;
+    let webapp_bytes = std::fs::read(webapp_archive_path)?;
+    let mut state = Vec::new();
+    state.write_u64::<BigEndian>(metadata_bytes.len() as u64)?;
+    state.extend_from_slice(&metadata_bytes);
+    state.write_u64::<BigEndian>(webapp_bytes.len() as u64)?;
+    state.extend_from_slice(&webapp_bytes);
+    std::fs::write(output_state_path, state)?;
     Ok(())
 }
 
