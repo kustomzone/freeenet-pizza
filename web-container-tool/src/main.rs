@@ -127,6 +127,9 @@ fn sign_webapp(
     fs::write(&parameters, vk.to_bytes())?;
     println!("Parameters written to: {} (32 bytes)", parameters);
 
+    // Preflight-check
+    vk.verify_strict(&message, &signature).unwrap();
+
     Ok(())
 }
 

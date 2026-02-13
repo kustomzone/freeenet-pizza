@@ -690,6 +690,7 @@ name = "deploy-tool"
 version = "0.1.0"
 dependencies = [
  "bs58",
+ "byteorder",
  "ciborium",
  "clap",
  "dirs",

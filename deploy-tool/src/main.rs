@@ -3,6 +3,7 @@ use std::error::Error;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use std::process::Command;
+use byteorder::{BigEndian, WriteBytesExt};
 
 macro_rules! println {
     ($($arg:tt)*) => {
@@ -117,8 +118,7 @@ fn web_container_generate() -> Result<(), Box<dyn Error>> {
 fn fdev_publish(
     contract_wasm: PathBuf,
     webapp_parameters: PathBuf,
-    webapp_archive: PathBuf,
-    webapp_metadata: PathBuf,
+    state: PathBuf,
 ) -> Result<(), Box<dyn Error>> {
     println!("Publishing contract...");
     execute(Command::new(cargo_bin_or_path("fdev"))
@@ -129,10 +129,8 @@ fn fdev_publish(
             "--parameters",
             &webapp_parameters.to_string_lossy(),
             "contract",
-            "--webapp-archive",
-            &webapp_archive.to_string_lossy(),
-            "--webapp-metadata",
-            &webapp_metadata.to_string_lossy(),
+            "--state",
+            &state.to_string_lossy(),
         ]))
 }
 
@@ -165,11 +163,22 @@ fn deploy(version: u32) -> Result<(), Box<dyn Error>> {
         version
     )?;
 
+    let state_path = default_storage_path("webapp.state");
+    {
+        let metadata_bytes = std::fs::read(&webapp_metadata)?;
+        let webapp_bytes = std::fs::read(&webapp_archive)?;
+        let mut state = Vec::new();
+        state.write_u64::<BigEndian>(metadata_bytes.len() as u64)?;
+        state.extend_from_slice(&metadata_bytes);
+        state.write_u64::<BigEndian>(webapp_bytes.len() as u64)?;
+        state.extend_from_slice(&webapp_bytes);
+        std::fs::write(&state_path, state)?;
+    }
+
     fdev_publish(
         contract_wasm,
         webapp_parameters,
-        webapp_archive,
-        webapp_metadata,
+        state_path,
     )?;
 
     Ok(())
@@ -210,11 +219,22 @@ fn initial_web_deploy() -> Result<(), Box<dyn Error>> {
         1
     )?;
 
+    let state_path = default_storage_path("webapp.state");
+    {
+        let metadata_bytes = std::fs::read(&webapp_metadata)?;
+        let webapp_bytes = std::fs::read(&webapp_archive)?;
+        let mut state = Vec::new();
+        state.write_u64::<BigEndian>(metadata_bytes.len() as u64)?;
+        state.extend_from_slice(&metadata_bytes);
+        state.write_u64::<BigEndian>(webapp_bytes.len() as u64)?;
+        state.extend_from_slice(&webapp_bytes);
+        std::fs::write(&state_path, state)?;
+    }
+
     fdev_publish(
         contract_wasm,
         webapp_parameters,
-        webapp_archive,
-        webapp_metadata,
+        state_path,
     )?;
 
     Ok(())
