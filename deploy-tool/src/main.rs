@@ -27,7 +27,7 @@ enum Commands {
     /// Deploy the application
     Deploy {
         /// Version number
-        #[arg(long, short, default_value = "1")]
+        #[arg(long, short, default_value = "0")]
         version: u32,
     },
     /// Launch application in development mode
@@ -38,7 +38,7 @@ enum Commands {
 
 fn cargo_build(package: &str) -> Result<(), Box<dyn Error>> {
     println!("Building package: {}", package);
-    let mut args = vec!["build", "--release", "--target", "wasm32-unknown-unknown", "--package", package];
+    let args = vec!["build", "--release", "--target", "wasm32-unknown-unknown", "--package", package];
     let status = Command::new("cargo")
         .args(args)
         .status()?;
@@ -156,8 +156,15 @@ fn initial_web_deploy() -> Result<(), Box<dyn Error>> {
     cargo_build("web-container-contract")?;
 
     let contract_wasm = PathBuf::from("target/wasm32-unknown-unknown/release/web_container_contract.wasm");
-    // FIXME: write file webapp.bootstrap.xz with content "bootstrap"
-    let webapp_archive = default_storage_path("webapp.bootstrap.xz");
+    let webapp_archive = default_storage_path("webapp.bootstrap.tar.xz");
+    if let Some(parent) = webapp_archive.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    // Create an empty .tar.xz archive
+    let file = std::fs::File::create(&webapp_archive)?;
+    let enc = xz2::write::XzEncoder::new(file, 6);
+    let mut tar = tar::Builder::new(enc);
+    tar.finish()?;
     let webapp_metadata = default_storage_path("webapp.metadata");
     let webapp_parameters = default_storage_path("webapp.parameters");
 
