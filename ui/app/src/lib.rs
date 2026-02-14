@@ -5,22 +5,43 @@ use leptos_router::{
     StaticSegment,
 };
 
+pub mod components;
+use crate::components::{PizzaOrder, Sidebar};
+
 #[component]
 pub fn App() -> impl IntoView {
     // Provides context that manages stylesheets, titles, meta tags, etc.
     provide_meta_context();
 
+    let orders = RwSignal::new(vec![
+        PizzaOrder {
+            id: "1".to_string(),
+            name: "Test Order".to_string(),
+            item_count: 2,
+            created_at: "2024-02-14".to_string(),
+        },
+    ]);
+    let selected_order_id = RwSignal::new(None::<String>);
+
     view! {
         // sets the document title
-        <Title text="Welcome to Leptos"/>
+        <Title text="Pizza Freenet"/>
 
         // content for this welcome page
         <Router>
-            <main>
-                <Routes fallback=|| "Page not found.".into_view()>
-                    <Route path=StaticSegment("") view=HomePage/>
-                </Routes>
-            </main>
+            <div class="app-container">
+                <Sidebar
+                    orders=orders.into()
+                    selected_order_id=selected_order_id.into()
+                    on_select=Callback::new(move |id| selected_order_id.set(Some(id)))
+                    on_new_order=Callback::new(move |_| println!("New order clicked"))
+                />
+                <main>
+                    <Routes fallback=|| "Page not found.".into_view()>
+                        <Route path=StaticSegment("") view=HomePage/>
+                    </Routes>
+                </main>
+            </div>
         </Router>
     }
 }
