@@ -1,24 +1,13 @@
-use std::fmt::format;
 use leptos::prelude::*;
-use leptos_router::hooks::use_params_map;
-use leptos_router::hooks::use_navigate;
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct PizzaOrder {
-    pub id: String,
-    pub name: String,
-    pub item_count: usize,
-    pub created_at: String,
-}
+use crate::Contract;
 
 #[component]
 pub fn Sidebar(
-    orders: Signal<Vec<PizzaOrder>>,
+    contracts: RwSignal<Vec<Contract>>,
     on_new_order: Callback<()>,
     selected_order_id: Option<String>,
-
 ) -> impl IntoView {
-    let is_empty = Signal::derive(move || orders.get().is_empty());
+    let is_empty = Signal::derive(move || contracts.with(|c| c.is_empty()));
     // let navigate = use_navigate();
 
     view! {
@@ -33,10 +22,10 @@ pub fn Sidebar(
             <div class="sidebar-content">
                 <ul class="order-list">
                     <For
-                        each=move || orders.get()
-                        key=|order| order.id.clone()
-                        children=move |order| {
-                            let order_id = order.id.clone();
+                        each=move || contracts.get()
+                        key=|contract: &Contract| contract.id.clone()
+                        children=move |contract| {
+                            let order_id = contract.id.clone();
                             let order_id_for_active = order_id.clone();
                             let is_active = selected_order_id.as_ref() == Some(&order_id_for_active);
                             // let navigate = navigate.clone();
@@ -52,10 +41,10 @@ pub fn Sidebar(
                                         }
                                     >
                                         <div class="order-item-name">
-                                            {order.name.clone()}
+                                            {contract.state.order.order.name.clone()}
                                         </div>
                                         <div class="order-item-meta">
-                                            {order.item_count} " items · " {order.created_at.clone()}
+                                            {contract.state.items.items.len()} " items · " {contract.parameters.created_at.to_rfc3339()}
                                         </div>
                                     </li>
                                 </a>

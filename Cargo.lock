@@ -112,10 +112,13 @@ checksum = "5f0e0fee31ef5ed1ba1316088939cea399010ed7731dba877ed44aeb407a75ea"
 name = "app"
 version = "0.1.0"
 dependencies = [
+ "chrono",
+ "ed25519-dalek",
  "getrandom 0.2.17",
  "leptos",
  "leptos_meta",
  "leptos_router",
+ "pizza-common",
  "rand",
 ]
 
@@ -2829,6 +2832,9 @@ name = "signature"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77549399552de45a898a580c1b41d445bf730df867cc44e6c0233bbc4b8329de"
+dependencies = [
+ "rand_core",
+]
 
 [[package]]
 name = "simd-adler32"

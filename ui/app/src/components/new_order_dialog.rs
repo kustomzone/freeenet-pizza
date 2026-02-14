@@ -1,7 +1,10 @@
 use leptos::prelude::*;
+use pizza_common::order_state::*;
+use ed25519_dalek::SigningKey;
 
 #[component]
 pub fn NewOrderDialog(
+    _sk: RwSignal<SigningKey>,
     on_create: Callback<String>,
     on_close: Callback<()>,
 ) -> impl IntoView {
