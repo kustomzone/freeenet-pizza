@@ -9,6 +9,9 @@
       <sourceFolder url="file://$MODULE_DIR$/contracts/web-container-contract/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/deploy-tool/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/web-container-tool/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/ui/app/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/ui/frontend/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/ui/server/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>
     <orderEntry type="inheritedJdk" />

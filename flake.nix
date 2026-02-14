@@ -33,6 +33,8 @@
 
             # Dioxus CLI
             dioxus-cli
+            trunk-ng
+            cargo-leptos
 
             # Build dependencies
             pkg-config
