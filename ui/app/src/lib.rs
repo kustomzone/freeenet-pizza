@@ -7,7 +7,7 @@ use leptos_router::{
 
 pub mod components;
 use crate::components::{NewOrderDialog, OrderView, PizzaOrder, Sidebar};
-use leptos_router::hooks::use_navigate;
+use leptos_router::hooks::{use_navigate, use_params_map};
 
 #[component]
 pub fn App() -> impl IntoView {
@@ -23,7 +23,6 @@ pub fn App() -> impl IntoView {
         },
     ]);
     let show_new_order = RwSignal::new(false);
-    let navigate = use_navigate();
 
     view! {
         // sets the document title
@@ -31,51 +30,60 @@ pub fn App() -> impl IntoView {
 
         // content for this welcome page
         <Router>
-            <div class="app-container">
-                <Sidebar
-                    orders=orders.into()
-                    on_new_order=Callback::new(move |_| show_new_order.set(true))
-                />
-                <main>
-                    <Routes fallback=|| "Page not found.".into_view()>
-                        <Route path=StaticSegment("") view=HomePage/>
-                        <Route path=(StaticSegment("order"), leptos_router::ParamSegment("id")) view=OrderView/>
-                    </Routes>
-                </main>
-
-                <Show when=move || show_new_order.get()>
-                    <NewOrderDialog
-                        on_create=Callback::new({
-                            let navigate = navigate.clone();
-                            move |name: String| {
-                                let id = format!("{}", rand::random::<u32>());
-                                orders.update(|os| os.push(PizzaOrder {
-                                    id: id.clone(),
-                                    name: name.clone(),
-                                    item_count: 0,
-                                    created_at: "Just now".to_string(),
-                                }));
-                                show_new_order.set(false);
-                                navigate(&format!("/order/{}", id), Default::default());
-                            }
-                        })
-                        on_close=Callback::new(move |_| show_new_order.set(false))
-                    />
-                </Show>
-            </div>
+            <AppContent orders show_new_order />
         </Router>
+    }
+}
+
+#[component]
+fn AppContent(orders: RwSignal<Vec<PizzaOrder>>, show_new_order: RwSignal<bool>) -> impl IntoView {
+    let navigate = use_navigate();
+    // let params = use_params_map();
+
+    view! {
+        <div class="app-container">
+            <Sidebar
+                orders=orders.into()
+                on_new_order=Callback::new(move |_| show_new_order.set(true))
+                selected_order_id=Some("da".into()) // params.get().get("id")
+            />
+            <main>
+                <Routes fallback=|| "Page not found.".into_view()>
+                    <Route path=StaticSegment("") view=HomePage/>
+                    <Route path=(StaticSegment("order"), leptos_router::ParamSegment("id")) view=OrderView/>
+                </Routes>
+            </main>
+
+            <Show when=move || show_new_order.get()>
+                <NewOrderDialog
+                    on_create=Callback::new({
+                        let navigate = navigate.clone();
+                        move |name: String| {
+                            let id = format!("{}", rand::random::<u32>());
+                            orders.update(|os| os.push(PizzaOrder {
+                                id: id.clone(),
+                                name: name.clone(),
+                                item_count: 0,
+                                created_at: "Just now".to_string(),
+                            }));
+                            show_new_order.set(false);
+                            navigate(&format!("/order/{}", id), Default::default());
+                        }
+                    })
+                    on_close=Callback::new(move |_| show_new_order.set(false))
+                />
+            </Show>
+        </div>
     }
 }
 
 /// Renders the home page of your application.
 #[component]
 fn HomePage() -> impl IntoView {
-    // Creates a reactive value to update the button
-    let count = RwSignal::new(0);
-    let on_click = move |_| *count.write() += 1;
-
     view! {
-        <h1>"Welcome to Leptos!"</h1>
-        <button on:click=on_click>"Click Me: " {count}</button>
+        <div class="empty-state">
+            <h3>"No order selected"</h3>
+            <p>"Select an order from the sidebar or create a new one"</p>
+        </div>
     }
 }

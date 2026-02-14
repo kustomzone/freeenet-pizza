@@ -1,3 +1,4 @@
+use std::fmt::format;
 use leptos::prelude::*;
 use leptos_router::hooks::use_params_map;
 use leptos_router::hooks::use_navigate;
@@ -14,11 +15,11 @@ pub struct PizzaOrder {
 pub fn Sidebar(
     orders: Signal<Vec<PizzaOrder>>,
     on_new_order: Callback<()>,
+    selected_order_id: Option<String>,
+
 ) -> impl IntoView {
     let is_empty = Signal::derive(move || orders.get().is_empty());
-    let params = use_params_map();
-    let selected_order_id = move || params.get().get("id");
-    let navigate = use_navigate();
+    // let navigate = use_navigate();
 
     view! {
         <aside class="sidebar">
@@ -37,24 +38,27 @@ pub fn Sidebar(
                         children=move |order| {
                             let order_id = order.id.clone();
                             let order_id_for_active = order_id.clone();
-                            let is_active = move || selected_order_id().as_ref() == Some(&order_id_for_active);
-                            let navigate = navigate.clone();
+                            let is_active = selected_order_id.as_ref() == Some(&order_id_for_active);
+                            // let navigate = navigate.clone();
                             let order_id_for_nav = order_id.clone();
-                            
+                            let url = vec!["/order/", &order_id_for_nav].join("");
+
                             view! {
-                                <li
-                                    class=move || if is_active() { "order-item active" } else { "order-item" }
-                                    on:click=move |_| {
-                                        navigate(&format!("/order/{}", order_id_for_nav), Default::default());
-                                    }
-                                >
-                                    <div class="order-item-name">
-                                        {order.name.clone()}
-                                    </div>
-                                    <div class="order-item-meta">
-                                        {order.item_count} " items · " {order.created_at.clone()}
-                                    </div>
-                                </li>
+                                <a href=url>
+                                    <li
+                                        class=move || if is_active { "order-item active" } else { "order-item" }
+                                        on:click=move |_| {
+                                            // navigate(&format!("/order/{}", order_id_for_nav), Default::default());
+                                        }
+                                    >
+                                        <div class="order-item-name">
+                                            {order.name.clone()}
+                                        </div>
+                                        <div class="order-item-meta">
+                                            {order.item_count} " items · " {order.created_at.clone()}
+                                        </div>
+                                    </li>
+                                </a>
                             }
                         }
                     />
