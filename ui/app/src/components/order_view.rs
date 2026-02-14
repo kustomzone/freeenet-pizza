@@ -2,6 +2,7 @@ use leptos::prelude::*;
 use leptos_router::hooks::use_params_map;
 use crate::Contract;
 use ed25519_dalek::{SigningKey, VerifyingKey};
+use pizza_common::{ComposableState, FullOrderStateV1Delta, ItemsV1};
 use pizza_common::order_state::{ItemContentV1, ItemV1, AuthorizedItemV1, Paid, AuthorizedPaidV1};
 
 #[component]
@@ -114,13 +115,13 @@ pub fn OrderView(
                         price_cents: price,
                     },
                 };
-                let auth_item = AuthorizedItemV1::new(item, &user_key);
-
-                if let Some(pos) = c.state.items.items.iter().position(|it| it.item.signed_by == user_vk_val) {
-                    c.state.items.items[pos] = auth_item;
-                } else {
-                    c.state.items.items.push(auth_item);
-                }
+                let current_state = c.state.clone();
+                let _ = c.state.apply_delta(&current_state, &c.parameters, &Some(FullOrderStateV1Delta {
+                    order: None,
+                    items: Some(vec![AuthorizedItemV1::new(item, &user_key)]),
+                    paid: None,
+                    version: None,
+                }));
             }
         });
 
@@ -178,10 +179,24 @@ pub fn OrderView(
 
     let handle_delete_item = move || {
         let user_vk_val = user_vk();
+        let owner_sk = sk.get();
         contracts.update(|all_contracts| {
             if let Some(c) = all_contracts.iter_mut().find(|c| c.id == order_id()) {
-                if let Some(pos) = c.state.items.items.iter().position(|it| it.item.signed_by == user_vk_val) {
-                    c.state.items.items.remove(pos);
+                if let Some(item) = c.state.items.items.iter().find(|it| it.item.signed_by == user_vk_val) {
+                    // c.state.items.items.remove(pos);
+                    let new_item = ItemV1 {
+                        signed_by: item.item.signed_by,
+                        owner_sign: false,
+                        content: ItemContentV1::Deleted {},
+                        version: item.item.version + 1,
+                    };
+                    let current_state = c.state.clone();
+                    let _ = c.state.apply_delta(&current_state, &c.parameters, &Some(FullOrderStateV1Delta {
+                        order: None,
+                        items: Some(vec![AuthorizedItemV1::new(new_item, &owner_sk)].into()),
+                        paid: None,
+                        version: None,
+                    }));
                 }
             }
         });
@@ -202,7 +217,14 @@ pub fn OrderView(
                     values: paid_map,
                     paid_version: c.state.paid.paid.paid_version + 1,
                 };
-                c.state.paid = AuthorizedPaidV1::new(new_paid, &owner_sk);
+                let delta: FullOrderStateV1Delta = FullOrderStateV1Delta {
+                    order: None,
+                    items: None,
+                    paid: Some(AuthorizedPaidV1::new(new_paid, &owner_sk)),
+                    version: None,
+                };
+                let current_state = c.state.clone();
+                let _ = c.state.apply_delta(&current_state, &c.parameters, &Some(delta));
             }
         });
     };

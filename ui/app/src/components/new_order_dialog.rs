@@ -1,5 +1,4 @@
 use leptos::prelude::*;
-use pizza_common::order_state::*;
 use ed25519_dalek::SigningKey;
 
 #[component]
