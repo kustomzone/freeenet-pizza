@@ -109,6 +109,10 @@ impl ComposableState for ItemsV1 {
                 }
             }
 
+            if items_c.len() > MAX_SUB_ELEMENTS {
+                return Err(format!("Has more than allowed {} sub items", MAX_SUB_ELEMENTS));
+            }
+
             self.items = items_c
         }
 
