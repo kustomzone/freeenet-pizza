@@ -1,4 +1,6 @@
 use leptos::prelude::*;
+use leptos_router::hooks::use_params_map;
+use leptos_router::hooks::use_navigate;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PizzaOrder {
@@ -11,11 +13,12 @@ pub struct PizzaOrder {
 #[component]
 pub fn Sidebar(
     orders: Signal<Vec<PizzaOrder>>,
-    selected_order_id: Signal<Option<String>>,
-    on_select: Callback<String>,
     on_new_order: Callback<()>,
 ) -> impl IntoView {
     let is_empty = Signal::derive(move || orders.get().is_empty());
+    let params = use_params_map();
+    let selected_order_id = move || params.get().get("id");
+    let navigate = use_navigate();
 
     view! {
         <aside class="sidebar">
@@ -34,14 +37,15 @@ pub fn Sidebar(
                         children=move |order| {
                             let order_id = order.id.clone();
                             let order_id_for_active = order_id.clone();
-                            let is_active = move || selected_order_id.get().as_ref() == Some(&order_id_for_active);
+                            let is_active = move || selected_order_id().as_ref() == Some(&order_id_for_active);
+                            let navigate = navigate.clone();
+                            let order_id_for_nav = order_id.clone();
                             
                             view! {
                                 <li
                                     class=move || if is_active() { "order-item active" } else { "order-item" }
-                                    on:click={
-                                        let id = order_id.clone();
-                                        move |_| on_select.run(id.clone())
+                                    on:click=move |_| {
+                                        navigate(&format!("/order/{}", order_id_for_nav), Default::default());
                                     }
                                 >
                                     <div class="order-item-name">

@@ -6,7 +6,8 @@ use leptos_router::{
 };
 
 pub mod components;
-use crate::components::{PizzaOrder, Sidebar};
+use crate::components::{NewOrderDialog, OrderView, PizzaOrder, Sidebar};
+use leptos_router::hooks::use_navigate;
 
 #[component]
 pub fn App() -> impl IntoView {
@@ -21,7 +22,8 @@ pub fn App() -> impl IntoView {
             created_at: "2024-02-14".to_string(),
         },
     ]);
-    let selected_order_id = RwSignal::new(None::<String>);
+    let show_new_order = RwSignal::new(false);
+    let navigate = use_navigate();
 
     view! {
         // sets the document title
@@ -32,15 +34,34 @@ pub fn App() -> impl IntoView {
             <div class="app-container">
                 <Sidebar
                     orders=orders.into()
-                    selected_order_id=selected_order_id.into()
-                    on_select=Callback::new(move |id| selected_order_id.set(Some(id)))
-                    on_new_order=Callback::new(move |_| println!("New order clicked"))
+                    on_new_order=Callback::new(move |_| show_new_order.set(true))
                 />
                 <main>
                     <Routes fallback=|| "Page not found.".into_view()>
                         <Route path=StaticSegment("") view=HomePage/>
+                        <Route path=(StaticSegment("order"), leptos_router::ParamSegment("id")) view=OrderView/>
                     </Routes>
                 </main>
+
+                <Show when=move || show_new_order.get()>
+                    <NewOrderDialog
+                        on_create=Callback::new({
+                            let navigate = navigate.clone();
+                            move |name: String| {
+                                let id = format!("{}", rand::random::<u32>());
+                                orders.update(|os| os.push(PizzaOrder {
+                                    id: id.clone(),
+                                    name: name.clone(),
+                                    item_count: 0,
+                                    created_at: "Just now".to_string(),
+                                }));
+                                show_new_order.set(false);
+                                navigate(&format!("/order/{}", id), Default::default());
+                            }
+                        })
+                        on_close=Callback::new(move |_| show_new_order.set(false))
+                    />
+                </Show>
             </div>
         </Router>
     }
