@@ -1,7 +1,7 @@
 use crate::order_state::OrderParametersV1;
 use crate::util::sign_struct;
 use crate::util::{truncated_base64, verify_struct};
-use crate::{FullOrderStateV1, UserId, UserIdKey};
+use crate::FullOrderStateV1;
 use ed25519_dalek::{Signature, SigningKey, VerifyingKey};
 use freenet_scaffold::util::{fast_hash, FastHash};
 use freenet_scaffold::ComposableState;
@@ -24,7 +24,7 @@ impl ComposableState for ItemsV1 {
 
     fn verify(
         &self,
-        parent_state: &Self::ParentState,
+        _parent_state: &Self::ParentState,
         parameters: &Self::Parameters,
     ) -> Result<(), String> {
         for item in &self.items {
@@ -71,7 +71,7 @@ impl ComposableState for ItemsV1 {
 
     fn apply_delta(
         &mut self,
-        parent_state: &Self::ParentState,
+        _parent_state: &Self::ParentState,
         parameters: &Self::Parameters,
         delta: &Option<Self::Delta>,
     ) -> Result<(), String> {
