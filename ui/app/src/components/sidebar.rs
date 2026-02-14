@@ -1,13 +1,16 @@
 use leptos::prelude::*;
 use crate::Contract;
+use ed25519_dalek::SigningKey;
 
 #[component]
 pub fn Sidebar(
     contracts: RwSignal<Vec<Contract>>,
+    sk: RwSignal<SigningKey>,
     on_new_order: Callback<()>,
     selected_order_id: Option<String>,
 ) -> impl IntoView {
     let is_empty = Signal::derive(move || contracts.with(|c| c.is_empty()));
+    let user_vk = move || sk.get().verifying_key();
     // let navigate = use_navigate();
 
     view! {
@@ -32,6 +35,8 @@ pub fn Sidebar(
                             let order_id_for_nav = order_id.clone();
                             let url = vec!["/order/", &order_id_for_nav].join("");
 
+                            let is_admin = contract.parameters.owner == user_vk();
+
                             view! {
                                 <a href=url>
                                     <li
@@ -42,6 +47,11 @@ pub fn Sidebar(
                                     >
                                         <div class="order-item-name">
                                             {contract.state.order.order.name.clone()}
+                                            {if is_admin {
+                                                view! { <span class="status-badge" style="color: red;">"Admin"</span> }.into_any()
+                                            } else {
+                                                view! {}.into_any()
+                                            }}
                                         </div>
                                         <div class="order-item-meta">
                                             {contract.state.items.items.len()} " items · " {contract.parameters.created_at.to_rfc3339()}

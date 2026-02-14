@@ -60,6 +60,7 @@ fn AppContent(
         <div class="app-container">
             <Sidebar
                 contracts=contracts
+                sk=sk
                 on_new_order=Callback::new(move |_| show_new_order.set(true))
                 selected_order_id=Some("da".into()) // params.get().get("id")
             />
