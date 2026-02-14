@@ -8,8 +8,6 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use crate::order_state::OrderParametersV1;
 
-pub const MAX_TEXT_LEN: usize = 120;
-
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
 pub struct AuthorizedPaidV1 {
     pub paid: Paid,
