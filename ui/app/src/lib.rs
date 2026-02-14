@@ -66,7 +66,9 @@ fn AppContent(
             <main>
                 <Routes fallback=|| "Page not found.".into_view()>
                     <Route path=StaticSegment("") view=HomePage/>
-                    <Route path=(StaticSegment("order"), leptos_router::ParamSegment("id")) view=OrderView/>
+                    <Route path=(StaticSegment("order"), leptos_router::ParamSegment("id")) view=move || {
+                        view! { <OrderView contracts=contracts sk=sk /> }
+                    }/>
                 </Routes>
             </main>
 
