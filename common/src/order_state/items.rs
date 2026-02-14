@@ -98,6 +98,10 @@ impl ComposableState for ItemsV1 {
                     // Replace if incoming version is newer
                     if incoming.item.version > items_c[pos].item.version {
                         items_c[pos] = incoming.clone();
+                    } else if incoming.item.version == items_c[pos].item.version {
+                        return Err(format!("Duplicate item version {:?} for {:?}", incoming.item.version, incoming.item.signed_by))
+                    } else if incoming.item.version < items_c[pos].item.version {
+                        return Err(format!("Lower item version {:?} for {:?}", incoming.item.version, incoming.item.signed_by))
                     }
                 } else {
                     // No existing item for this signer – insert
