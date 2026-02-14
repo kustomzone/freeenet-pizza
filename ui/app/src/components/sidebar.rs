@@ -1,6 +1,7 @@
 use leptos::prelude::*;
 use crate::Contract;
 use ed25519_dalek::SigningKey;
+use pizza_common::order_state::ItemContentV1;
 
 #[component]
 pub fn Sidebar(
@@ -37,6 +38,25 @@ pub fn Sidebar(
 
                             let is_admin = contract.parameters.owner == user_vk();
 
+                            let total_cents = contract.state.items.items.iter().filter_map(|ai| {
+                                match &ai.item.content {
+                                    ItemContentV1::Item { price_cents, .. } => Some(*price_cents),
+                                    _ => None,
+                                }
+                            }).sum::<u64>();
+
+                            let paid_cents = contract.state.items.items.iter().filter_map(|ai| {
+                                match &ai.item.content {
+                                    ItemContentV1::Item { price_cents, .. } => {
+                                        let paid = contract.state.paid.paid.values.get(&ai.item.signed_by).copied().unwrap_or(false);
+                                        if paid { Some(*price_cents) } else { None }
+                                    }
+                                    _ => None,
+                                }
+                            }).sum::<u64>();
+
+                            let is_fully_paid = total_cents > 0 && paid_cents == total_cents;
+
                             view! {
                                 <a href=url>
                                     <li
@@ -48,7 +68,12 @@ pub fn Sidebar(
                                         <div class="order-item-name">
                                             {contract.state.order.order.name.clone()}
                                             {if is_admin {
-                                                view! { <span class="status-badge" style="color: red;">"Admin"</span> }.into_any()
+                                                view! { <span class="status-badge" style="color: red; margin-left: 8px; font-size: 0.7em; padding: 2px 6px;">"Admin"</span> }.into_any()
+                                            } else {
+                                                view! {}.into_any()
+                                            }}
+                                            {if is_fully_paid {
+                                                view! { <span class="status-badge paid" style="margin-left: 8px; font-size: 0.7em; padding: 2px 6px;">"Paid"</span> }.into_any()
                                             } else {
                                                 view! {}.into_any()
                                             }}
