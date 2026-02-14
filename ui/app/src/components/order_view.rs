@@ -24,6 +24,7 @@ pub fn OrderView(
     let (display_name, set_display_name) = signal(String::new());
     let (order_text, set_order_text) = signal(String::new());
     let (price_input, set_price_input) = signal(String::new());
+    let (price_error, set_price_error) = signal(Option::<String>::None);
     let (show_add_form, set_show_add_form) = signal(false);
     let (edit_mode, set_edit_mode) = signal(false);
     let (show_invite_copied, set_show_invite_copied) = signal(false);
@@ -94,7 +95,16 @@ pub fn OrderView(
             return;
         }
 
-        let price = parse_price(&pi);
+        let price = match parse_price(&pi) {
+            Ok(p) => {
+                set_price_error.set(None);
+                p
+            }
+            Err(e) => {
+                set_price_error.set(Some(e));
+                return;
+            }
+        };
         let user_key = sk.get();
         let user_vk_val = user_key.verifying_key();
 
@@ -137,7 +147,16 @@ pub fn OrderView(
         let ot = order_text.get();
         let pi = price_input.get();
 
-        let price = parse_price(&pi);
+        let price = match parse_price(&pi) {
+            Ok(p) => {
+                set_price_error.set(None);
+                p
+            }
+            Err(e) => {
+                set_price_error.set(Some(e));
+                return;
+            }
+        };
         let user_key = sk.get();
         let user_vk_val = user_key.verifying_key();
 
@@ -306,8 +325,19 @@ pub fn OrderView(
                                                         <input
                                                             type="text"
                                                             prop:value=format_price(item_view.2)
-                                                            on:input=move |e| set_price_input.set(event_target_value(&e))
+                                                            on:input=move |e| {
+                                                                let val = event_target_value(&e);
+                                                                set_price_input.set(val.clone());
+                                                                if let Err(err) = parse_price(&val) {
+                                                                    set_price_error.set(Some(err));
+                                                                } else {
+                                                                    set_price_error.set(None);
+                                                                }
+                                                            }
                                                         />
+                                                        {move || price_error.get().map(|err| view! {
+                                                            <div class="error-message" style="color: var(--error-color, red); font-size: 0.8em; margin-top: 4px;">{err}</div>
+                                                        })}
                                                     </div>
                                                 </div>
                                                 <div class="form-group">
@@ -344,6 +374,7 @@ pub fn OrderView(
                                                         set_display_name.set(item_view_2.0.clone());
                                                         set_order_text.set(item_view_2.1.clone());
                                                         set_price_input.set(format_price(item_view_2.2));
+                                                        set_price_error.set(None);
                                                         set_edit_mode.set(true);
                                                     }>"Edit"</button>
                                                     <button class="btn btn-small btn-outline" on:click=move |_| handle_delete_item()>"Remove"</button>
@@ -371,8 +402,19 @@ pub fn OrderView(
                                                         <input
                                                             type="text"
                                                             placeholder="e.g., 12.50"
-                                                            on:input=move |e| set_price_input.set(event_target_value(&e))
+                                                            on:input=move |e| {
+                                                                let val = event_target_value(&e);
+                                                                set_price_input.set(val.clone());
+                                                                if let Err(err) = parse_price(&val) {
+                                                                    set_price_error.set(Some(err));
+                                                                } else {
+                                                                    set_price_error.set(None);
+                                                                }
+                                                            }
                                                         />
+                                                        {move || price_error.get().map(|err| view! {
+                                                            <div class="error-message" style="color: var(--error-color, red); font-size: 0.8em; margin-top: 4px;">{err}</div>
+                                                        })}
                                                     </div>
                                                 </div>
                                                 <div class="form-group">
@@ -391,7 +433,10 @@ pub fn OrderView(
                                         }.into_any()
                                     } else {
                                         view! {
-                                            <button class="btn btn-secondary" on:click=move |_| set_show_add_form.set(true)>
+                                            <button class="btn btn-secondary" on:click=move |_| {
+                                                set_price_error.set(None);
+                                                set_show_add_form.set(true);
+                                            }>
                                                 "+ Add Your Order"
                                             </button>
                                         }.into_any()
@@ -477,15 +522,22 @@ fn format_price(cents: u64) -> String {
     format!("${}.{:02}", dollars, cents_part)
 }
 
-fn parse_price(input: &str) -> u64 {
-    let clean = input.trim().trim_start_matches('$');
-    if let Some((dollars, cents)) = clean.split_once('.') {
-        let d: u64 = dollars.parse().unwrap_or(0);
+fn parse_price(input: &str) -> Result<u64, String> {
+    let clean: String = input.chars().filter(|c| c.is_ascii_digit() || *c == '.' || *c == ',').collect();
+    if clean.is_empty() {
+        return Err("Price cannot be empty".to_string());
+    }
+
+    let split_at = if clean.contains(',') { ',' } else { '.' };
+
+    if let Some((dollars, cents)) = clean.split_once(split_at) {
+        let d: u64 = if dollars.is_empty() { 0 } else { dollars.parse().map_err(|_| "Invalid dollar amount".to_string())? };
         let mut c_str = cents.to_string();
         c_str.push_str("00");
-        let c: u64 = c_str[..2].parse().unwrap_or(0);
-        d * 100 + c
+        let c: u64 = c_str[..2].parse().map_err(|_| "Invalid cents amount".to_string())?;
+        Ok(d * 100 + c)
     } else {
-        clean.parse::<u64>().unwrap_or(0) * 100
+        let d: u64 = clean.parse().map_err(|_| "Invalid price format".to_string())?;
+        Ok(d * 100)
     }
 }
