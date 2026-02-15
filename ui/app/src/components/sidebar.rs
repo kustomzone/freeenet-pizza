@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use dioxus::prelude::*;
 use crate::app::{Contract, Route};
 use ed25519_dalek::SigningKey;
@@ -5,7 +6,7 @@ use pizza_common::order_state::ItemContentV1;
 
 #[component]
 pub fn Sidebar(
-    contracts: Signal<Vec<Contract>>,
+    contracts: Signal<HashMap<String, Contract>>,
     sk: Signal<SigningKey>,
     on_new_order: EventHandler<()>,
     selected_order_id: Option<String>,
@@ -27,11 +28,10 @@ pub fn Sidebar(
                 class: "sidebar-content",
                 ul {
                     class: "order-list",
-                    for contract in contracts.read().iter() {
+                    for contract in contracts.read().values() {
                         {
                             let order_id = contract.id.clone();
                             let is_active = selected_order_id.as_ref() == Some(&order_id);
-                            let url = format!("/order/{}", order_id);
                             let is_admin = contract.parameters.owner == user_vk;
 
                             let total_cents = contract.state.items.items.iter().filter_map(|ai| {

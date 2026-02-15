@@ -22,7 +22,7 @@ pub fn NewOrderDialog(
                 }
 
                 form {
-                    onsubmit: move |e| {
+                    onsubmit: move |_e| {
                         let name = order_name.read().clone();
                         if !name.is_empty() {
                             on_create.call(name);

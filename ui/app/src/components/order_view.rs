@@ -1,18 +1,19 @@
+use std::collections::HashMap;
 use dioxus::prelude::*;
-use crate::app::{Contract, Route};
+use crate::app::Contract;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use pizza_common::{ComposableState, FullOrderStateV1Delta};
 use pizza_common::order_state::{ItemContentV1, ItemV1, AuthorizedItemV1, Paid, AuthorizedPaidV1};
 
 #[component]
 pub fn OrderViewComponent(
-    mut contracts: Signal<Vec<Contract>>,
+    mut contracts: Signal<HashMap<String, Contract>>,
     sk: Signal<SigningKey>,
     id: String,
 ) -> Element {
     let order_id = id;
 
-    let contract = contracts.read().iter().find(|c| c.id == order_id).cloned();
+    let contract = contracts.read().get(&order_id).cloned();
 
     let user_vk = sk.read().verifying_key();
 
@@ -99,7 +100,7 @@ pub fn OrderViewComponent(
 
             let current_order_id = order_id.clone();
             contracts.with_mut(|all_contracts| {
-                if let Some(c) = all_contracts.iter_mut().find(|c| c.id == current_order_id) {
+                if let Some(c) = all_contracts.get_mut(&current_order_id) {
                     let next_version = c.state.items.items.iter()
                         .find(|it| it.item.signed_by == user_vk_val)
                         .map(|it| it.item.version + 1)
@@ -154,7 +155,7 @@ pub fn OrderViewComponent(
 
             let current_order_id = order_id.clone();
             contracts.with_mut(|all_contracts| {
-                if let Some(c) = all_contracts.iter_mut().find(|c| c.id == current_order_id) {
+                if let Some(c) = all_contracts.get_mut(&current_order_id) {
                     if let Some(pos) = c.state.items.items.iter().position(|it| it.item.signed_by == user_vk_val) {
                         let existing = &c.state.items.items[pos];
                         
@@ -197,7 +198,7 @@ pub fn OrderViewComponent(
             let owner_sk = sk.read().clone();
             let current_order_id = order_id.clone();
             contracts.with_mut(|all_contracts| {
-                if let Some(c) = all_contracts.iter_mut().find(|c| c.id == current_order_id) {
+                if let Some(c) = all_contracts.get_mut(&current_order_id) {
                     if let Some(item) = c.state.items.items.iter().find(|it| it.item.signed_by == user_vk_val) {
                         let new_item = ItemV1 {
                             signed_by: item.item.signed_by,
@@ -224,7 +225,7 @@ pub fn OrderViewComponent(
             let owner_sk = sk.read().clone();
             let current_order_id = order_id.clone();
             contracts.with_mut(|all_contracts| {
-                if let Some(c) = all_contracts.iter_mut().find(|c| c.id == current_order_id) {
+                if let Some(c) = all_contracts.get_mut(&current_order_id) {
                     // Verify caller is owner
                     if owner_sk.verifying_key() != c.parameters.owner {
                         return;

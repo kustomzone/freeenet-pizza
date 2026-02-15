@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use dioxus::prelude::*;
 use dioxus::prelude::Router;
 
@@ -24,7 +25,7 @@ pub enum Route {
 #[component]
 fn OrderPage(id: String) -> Element {
     rsx! {
-        OrderViewComponent { contracts: use_context::<Signal<Vec<Contract>>>(), sk: use_context::<Signal<SigningKey>>(), id: id }
+        OrderViewComponent { contracts: use_context::<Signal<HashMap<String, Contract>>>(), sk: use_context::<Signal<SigningKey>>(), id: id }
     }
 }
 
@@ -50,7 +51,7 @@ fn AppContent() -> Element {
     rand::Rng::fill(&mut rand::thread_rng(), &mut bytes);
     let sk = use_signal(|| SigningKey::from_bytes(&bytes));
 
-    let mut contracts = use_signal(|| Vec::<Contract>::new());
+    let mut contracts = use_signal(|| HashMap::<String, Contract>::new());
     let mut show_new_order = use_signal(|| false);
 
     let route = use_route::<Route>();
@@ -105,7 +106,9 @@ fn AppContent() -> Element {
                             sk: Some(sk_val),
                             vk,
                         };
-                        contracts.with_mut(|c| c.push(contract));
+                        contracts.with_mut(|c| {
+                            c.insert(id.clone(), contract);
+                        });
                         show_new_order.set(false);
                         let nav = use_navigator();
                         nav.push(Route::OrderPage { id });
