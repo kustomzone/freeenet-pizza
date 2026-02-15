@@ -31,6 +31,13 @@ pub trait BaseInterface {
 
     /// Signs a message and returns the signature
     fn sign_message(&self, message: &[u8]) -> Result<Vec<u8>, Box<dyn Error>>;
+
+    /// Publish a new contract
+    fn publish_contract(
+        &self,
+        state: FullOrderStateV1,
+        parameters: OrderParametersV1,
+    ) -> Result<FullOrderStateV1, Box<dyn Error>>;
 }
 
 pub struct LocalStorageService {
@@ -117,5 +124,25 @@ impl BaseInterface for LocalStorageService {
         let signing_key = self.get_private_key()?;
         let signature: Signature = signing_key.sign(message);
         Ok(signature.to_bytes().to_vec())
+    }
+
+    fn publish_contract(
+        &self,
+        state: FullOrderStateV1,
+        parameters: OrderParametersV1,
+    ) -> Result<FullOrderStateV1, Box<dyn Error>> {
+        let id = format!("{}", rand::random::<u32>());
+        let state_json = serde_json::to_string(&state)?;
+        let params_json = serde_json::to_string(&parameters)?;
+
+        self.storage.set_item(&Self::get_state_key(&id), &state_json).map_err(js_to_err)?;
+        self.storage.set_item(&Self::get_params_key(&id), &params_json).map_err(js_to_err)?;
+
+        let mut contracts = self.get_contracts()?;
+        contracts.push(id);
+        let contracts_json = serde_json::to_string(&contracts)?;
+        self.storage.set_item(CONTRACTS_KEY, &contracts_json).map_err(js_to_err)?;
+
+        Ok(state)
     }
 }
