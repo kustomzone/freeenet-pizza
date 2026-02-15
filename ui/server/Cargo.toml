@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-leptos = { workspace = true, features = [ "ssr" ]}
+dioxus = { workspace = true, features = ["ssr"] }
 axum.workspace = true
 simple_logger.workspace = true
 tokio.workspace = true

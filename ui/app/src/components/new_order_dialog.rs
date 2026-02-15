@@ -1,62 +1,69 @@
-use leptos::prelude::*;
+use dioxus::prelude::*;
 use ed25519_dalek::SigningKey;
 
 #[component]
 pub fn NewOrderDialog(
-    _sk: RwSignal<SigningKey>,
-    on_create: Callback<String>,
-    on_close: Callback<()>,
-) -> impl IntoView {
-    let (order_name, set_order_name) = signal(String::new());
+    _sk: Signal<SigningKey>,
+    on_create: EventHandler<String>,
+    on_close: EventHandler<()>,
+) -> Element {
+    let mut order_name = use_signal(String::new);
 
-    view! {
-        <div class="modal-overlay" on:click=move |_| on_close.run(())>
-            <div class="modal" on:click=|e| e.stop_propagation()>
-                <div class="modal-header">
-                    <h3>"Create New Order"</h3>
-                </div>
+    rsx! {
+        div {
+            class: "modal-overlay",
+            onclick: move |_| on_close.call(()),
+            div {
+                class: "modal",
+                onclick: |e| e.stop_propagation(),
+                div {
+                    class: "modal-header",
+                    h3 { "Create New Order" }
+                }
 
-                <form on:submit=move |e| {
-                    e.prevent_default();
-                    let name = order_name.get();
-                    if !name.is_empty() {
-                        on_create.run(name);
-                    }
-                }>
-                    <div class="modal-body">
-                        <div class="form-group">
-                            <label>"Order Name"</label>
-                            <input
-                                type="text"
-                                placeholder="e.g., Pizza for Friday Party"
-                                required=true
-                                autofocus=true
-                                prop:value=order_name
-                                on:input=move |e| set_order_name.set(event_target_value(&e))
-                            />
-                        </div>
-                        <p style="color: var(--text-muted); font-size: 0.9rem;">
+                form {
+                    onsubmit: move |e| {
+                        let name = order_name.read().clone();
+                        if !name.is_empty() {
+                            on_create.call(name);
+                        }
+                    },
+                    div {
+                        class: "modal-body",
+                        div {
+                            class: "form-group",
+                            label { "Order Name" }
+                            input {
+                                r#type: "text",
+                                placeholder: "e.g., Pizza for Friday Party",
+                                required: true,
+                                autofocus: true,
+                                value: "{order_name}",
+                                oninput: move |e| order_name.set(e.value())
+                            }
+                        }
+                        p {
+                            style: "color: var(--text-muted); font-size: 0.9rem;",
                             "You'll be the creator of this order and can mark items as paid."
-                        </p>
-                    </div>
+                        }
+                    }
 
-                    <div class="modal-footer">
-                        <button
-                            class="btn btn-outline"
-                            type="button"
-                            on:click=move |_| on_close.run(())
-                        >
+                    div {
+                        class: "modal-footer",
+                        button {
+                            class: "btn btn-outline",
+                            r#type: "button",
+                            onclick: move |_| on_close.call(()),
                             "Cancel"
-                        </button>
-                        <button
-                            class="btn btn-primary"
-                            type="submit"
-                        >
+                        }
+                        button {
+                            class: "btn btn-primary",
+                            r#type: "submit",
                             "Create Order"
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
+                        }
+                    }
+                }
+            }
+        }
     }
 }

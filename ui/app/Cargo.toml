@@ -6,9 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-leptos.workspace = true
-leptos_meta.workspace = true
-leptos_router.workspace = true
+dioxus = { workspace = true, features = ["web", "router"] }
 rand = { version = "0.8", features = ["getrandom"] }
 getrandom = { version = "0.2", features = ["js"] }
 pizza-common = { path = "../../common" }
@@ -16,5 +14,4 @@ ed25519-dalek = "2.2.0"
 chrono = { workspace = true }
 
 [features]
-default = ["csr"]
-csr = ["leptos/csr"]
+default = []

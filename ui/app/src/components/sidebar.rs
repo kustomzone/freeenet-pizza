@@ -1,42 +1,38 @@
-use leptos::prelude::*;
+use dioxus::prelude::*;
 use crate::Contract;
 use ed25519_dalek::SigningKey;
 use pizza_common::order_state::ItemContentV1;
 
 #[component]
 pub fn Sidebar(
-    contracts: RwSignal<Vec<Contract>>,
-    sk: RwSignal<SigningKey>,
-    on_new_order: Callback<()>,
+    contracts: Signal<Vec<Contract>>,
+    sk: Signal<SigningKey>,
+    on_new_order: EventHandler<()>,
     selected_order_id: Option<String>,
-) -> impl IntoView {
-    let is_empty = Signal::derive(move || contracts.with(|c| c.is_empty()));
-    let user_vk = move || sk.get().verifying_key();
-    // let navigate = use_navigate();
+) -> Element {
+    let user_vk = sk.read().verifying_key();
 
-    view! {
-        <aside class="sidebar">
-            <div class="sidebar-header">
-                <h1>
-                    <span>"🍕"</span>
-                    <span>"Pizza Orders"</span>
-                </h1>
-            </div>
+    rsx! {
+        aside {
+            class: "sidebar",
+            div {
+                class: "sidebar-header",
+                h1 {
+                    span { "🍕" }
+                    span { "Pizza Orders" }
+                }
+            }
 
-            <div class="sidebar-content">
-                <ul class="order-list">
-                    <For
-                        each=move || contracts.get()
-                        key=|contract: &Contract| contract.id.clone()
-                        children=move |contract| {
+            div {
+                class: "sidebar-content",
+                ul {
+                    class: "order-list",
+                    for contract in contracts.read().iter() {
+                        {
                             let order_id = contract.id.clone();
-                            let order_id_for_active = order_id.clone();
-                            let is_active = selected_order_id.as_ref() == Some(&order_id_for_active);
-                            // let navigate = navigate.clone();
-                            let order_id_for_nav = order_id.clone();
-                            let url = vec!["/order/", &order_id_for_nav].join("");
-
-                            let is_admin = contract.parameters.owner == user_vk();
+                            let is_active = selected_order_id.as_ref() == Some(&order_id);
+                            let url = format!("/order/{}", order_id);
+                            let is_admin = contract.parameters.owner == user_vk;
 
                             let total_cents = contract.state.items.items.iter().filter_map(|ai| {
                                 match &ai.item.content {
@@ -57,52 +53,56 @@ pub fn Sidebar(
 
                             let is_fully_paid = total_cents > 0 && paid_cents == total_cents;
 
-                            view! {
-                                <a href=url>
-                                    <li
-                                        class=move || if is_active { "order-item active" } else { "order-item" }
-                                        on:click=move |_| {
-                                            // navigate(&format!("/order/{}", order_id_for_nav), Default::default());
+                            rsx! {
+                                Link {
+                                    to: url,
+                                    li {
+                                        class: if is_active { "order-item active" } else { "order-item" },
+                                        div {
+                                            class: "order-item-name",
+                                            "{contract.state.order.order.name}"
+                                            if is_admin {
+                                                span {
+                                                    class: "status-badge",
+                                                    style: "color: red; margin-left: 8px; font-size: 0.7em; padding: 2px 6px;",
+                                                    "Admin"
+                                                }
+                                            }
+                                            if is_fully_paid {
+                                                span {
+                                                    class: "status-badge paid",
+                                                    style: "margin-left: 8px; font-size: 0.7em; padding: 2px 6px;",
+                                                    "Paid"
+                                                }
+                                            }
                                         }
-                                    >
-                                        <div class="order-item-name">
-                                            {contract.state.order.order.name.clone()}
-                                            {if is_admin {
-                                                view! { <span class="status-badge" style="color: red; margin-left: 8px; font-size: 0.7em; padding: 2px 6px;">"Admin"</span> }.into_any()
-                                            } else {
-                                                view! {}.into_any()
-                                            }}
-                                            {if is_fully_paid {
-                                                view! { <span class="status-badge paid" style="margin-left: 8px; font-size: 0.7em; padding: 2px 6px;">"Paid"</span> }.into_any()
-                                            } else {
-                                                view! {}.into_any()
-                                            }}
-                                        </div>
-                                        <div class="order-item-meta">
-                                            {contract.state.items.items.len()} " items · " {contract.parameters.created_at.to_rfc3339()}
-                                        </div>
-                                    </li>
-                                </a>
+                                        div {
+                                            class: "order-item-meta",
+                                            "{contract.state.items.items.len()} items · {contract.parameters.created_at.to_rfc3339()}"
+                                        }
+                                    }
+                                }
                             }
                         }
-                    />
-                </ul>
+                    }
+                }
 
-                <Show when=move || is_empty.get()>
-                    <div style="padding: 20px; text-align: center; color: rgba(255,255,255,0.5);">
+                if contracts.read().is_empty() {
+                    div {
+                        style: "padding: 20px; text-align: center; color: rgba(255,255,255,0.5);",
                         "No orders yet"
-                    </div>
-                </Show>
-            </div>
+                    }
+                }
+            }
 
-            <div class="sidebar-footer">
-                <button
-                    class="btn btn-primary btn-full-width"
-                    on:click=move |_| on_new_order.run(())
-                >
-                    <span>"+ New Order"</span>
-                </button>
-            </div>
-        </aside>
+            div {
+                class: "sidebar-footer",
+                button {
+                    class: "btn btn-primary btn-full-width",
+                    onclick: move |_| on_new_order.call(()),
+                    span { "+ New Order" }
+                }
+            }
+        }
     }
 }
