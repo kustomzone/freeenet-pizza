@@ -9,8 +9,8 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use ciborium::{de::from_reader, ser::into_writer};
-use dioxus::prelude::{Readable, ReadableExt, Writable};
-use dioxus::signals::{Global, GlobalSignal};
+use dioxus::prelude::ReadableExt;
+use dioxus::signals::{Global, GlobalSignal, Writable};
 use freenet_stdlib::client_api::{
     ClientRequest, ContractRequest, ContractResponse, HostResponse, QueryResponse,
 };
