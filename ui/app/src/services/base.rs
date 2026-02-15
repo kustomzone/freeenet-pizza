@@ -13,6 +13,7 @@ fn js_to_err(js: JsValue) -> Box<dyn Error> {
     format!("{:?}", js).into()
 }
 
+#[derive(Clone, PartialEq)]
 pub struct Contract {
     pub state: FullOrderStateV1,
     pub parameters: OrderParametersV1,

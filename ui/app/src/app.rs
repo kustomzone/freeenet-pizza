@@ -31,11 +31,22 @@ pub struct Contract {
     pub id: String,
 }
 
+impl From<Contract> for crate::services::Contract {
+    fn from(c: Contract) -> Self {
+        Self {
+            state: c.state,
+            parameters: c.parameters,
+        }
+    }
+}
+
 #[component]
 fn OrderPage(id: String) -> Element {
     let contracts = use_context::<Signal<HashMap<String, Contract>>>();
     let id_clone = id.clone();
-    let contract = use_memo(move || contracts.read().get(&id_clone).cloned());
+    let contract = use_memo(move || {
+        contracts.read().get(&id_clone).cloned().map(crate::services::Contract::from)
+    });
     rsx! {
         OrderViewComponent { contract: contract, id: id }
     }
