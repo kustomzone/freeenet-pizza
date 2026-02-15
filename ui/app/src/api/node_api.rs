@@ -92,7 +92,7 @@ pub fn connect_node_api(config: &NodeConfig) {
         }
     };
 
-    ws.set_binary_type(web_sys::BinaryType::Arraybuffer);
+    // ws.set_binary_type(web_sys::BinaryType::Arraybuffer);
 
     let ws_rc = Rc::new(RefCell::new(ws.clone()));
 

@@ -4,10 +4,10 @@ use dioxus::prelude::*;
 use crate::components::{NewOrderDialog, OrderViewComponent, Sidebar};
 use pizza_common::order_state::*;
 use chrono::Utc;
-use crate::services::{LocalStorageService, BaseService};
+use crate::services::{FreenetService, BaseService};
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use futures::StreamExt;
-use crate::api::get_auth_token_from_window;
+use crate::api::{get_auth_token_from_window, NodeConfig, connect_node_api, NODE_HTTP_BASE};
 
 #[derive(Clone, Routable, Debug, PartialEq)]
 #[rustfmt::skip]
@@ -50,10 +50,16 @@ fn OrderPage(id: String) -> Element {
 #[component]
 pub fn App() -> Element {
     use_context_provider(|| {
-        let storage = LocalStorageService::new().expect("Failed to create LocalStorageService");
+        let storage = FreenetService::new().expect("Failed to create FreenetService");
         BaseService(std::rc::Rc::new(storage))
     });
     get_auth_token_from_window();
+
+    use_effect(|| {
+        let api_url = NODE_HTTP_BASE.read().clone();
+        let api_url = api_url.replace("http", "ws") + "/v1/contract/command";
+        connect_node_api(&NodeConfig { api_url });
+    });
 
     rsx! {
         Router::<Route> {}
