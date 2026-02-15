@@ -197,7 +197,7 @@ pub fn YourOrderSection(
                                         label { "Display Name" }
                                         input {
                                             r#type: "text",
-                                            value: "{item.0}",
+                                            value: "{display_name}",
                                             oninput: move |e| display_name.set(e.value())
                                         }
                                     }
@@ -206,7 +206,7 @@ pub fn YourOrderSection(
                                         label { "Price" }
                                         input {
                                             r#type: "text",
-                                            value: "{format_price(item.2)}",
+                                            value: "{price_input}",
                                             oninput: move |e| {
                                                 let val = e.value();
                                                 price_input.set(val.clone());
@@ -230,8 +230,8 @@ pub fn YourOrderSection(
                                     class: "form-group",
                                     label { "Order" }
                                     textarea {
+                                        value: "{order_text}",
                                         oninput: move |e| order_text.set(e.value()),
-                                        "{item.1}"
                                     }
                                 }
                                 div {
@@ -306,6 +306,7 @@ pub fn YourOrderSection(
                                         label { "Your Name" }
                                         input {
                                             r#type: "text",
+                                            value: "{display_name}",
                                             placeholder: "e.g., John",
                                             required: true,
                                             oninput: move |e| display_name.set(e.value())
@@ -316,6 +317,7 @@ pub fn YourOrderSection(
                                         label { "Price" }
                                         input {
                                             r#type: "text",
+                                            value: "{price_input}",
                                             placeholder: "e.g., 12.50",
                                             oninput: move |e| {
                                                 let val = e.value();
@@ -340,6 +342,7 @@ pub fn YourOrderSection(
                                     class: "form-group",
                                     label { "What would you like?" }
                                     textarea {
+                                        value: "{order_text}",
                                         placeholder: "e.g., 1x Margherita, extra cheese",
                                         required: true,
                                         oninput: move |e| order_text.set(e.value())
