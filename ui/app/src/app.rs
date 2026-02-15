@@ -168,15 +168,18 @@ fn AppContent() -> Element {
                             paid: AuthorizedPaidV1::new(Paid::default(), &sk_val),
                             ..Default::default()
                         };
-                        
+
                         let contract = crate::services::Contract {
                             state,
                             parameters,
                         };
-                        
-                        if let Ok(_) = base.publish_contract(contract) {
-                            show_new_order.set(false);
-                        }
+
+                        // Spawn async task to publish the contract
+                        spawn(async move {
+                            if let Ok(_) = base.publish_contract(contract).await {
+                                show_new_order.set(false);
+                            }
+                        });
                     },
                     on_close: move |_| show_new_order.set(false)
                 }

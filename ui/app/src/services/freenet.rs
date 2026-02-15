@@ -6,17 +6,21 @@
 use std::error::Error;
 use std::pin::Pin;
 
+use dioxus::prelude::ReadableExt;
+use dioxus::signals::Writable;
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use freenet_stdlib::prelude::ContractKey;
 use futures::Stream;
 use futures::StreamExt;
 use pizza_common::{ComposableState, FullOrderStateV1, FullOrderStateV1Delta, OrderParametersV1};
 
-use super::base::{BaseInterface, Contract};
+use super::base::{
+    AsyncResult, BaseInterface, Contract, PublishContractResponse, PublishDeltaResponse,
+};
 use crate::api::node_api::{
-    get_contract_keys, get_contract_state, publish_contract as api_publish_contract,
-    send_contract_update, subscribe_to_contract, subscribe_to_contract_list,
-    subscribe_to_contract_updates, CONTRACTS,
+    get_contract_keys, get_contract_state, publish_contract_async, send_contract_update_async,
+    subscribe_to_contract_async, subscribe_to_contract_list, subscribe_to_contract_updates,
+    CONTRACTS,
 };
 
 /// Private key storage key in browser storage (for key persistence across sessions)
@@ -29,6 +33,7 @@ const PRIVATE_KEY_KEY: &str = "pizza_private_key";
 /// - Subscribes to contract updates via WebSocket notifications
 /// - Sends state updates to the network
 /// - Uses browser storage only for private key persistence (not contract state)
+/// - Awaits network acknowledgements for operations
 #[derive(Clone)]
 pub struct FreenetService {
     /// The user's signing key (persisted in browser storage)
@@ -52,7 +57,10 @@ impl FreenetService {
             .map_err(|e| format!("{:?}", e))?
             .ok_or("no local storage")?;
 
-        match storage.get_item(PRIVATE_KEY_KEY).map_err(|e| format!("{:?}", e))? {
+        match storage
+            .get_item(PRIVATE_KEY_KEY)
+            .map_err(|e| format!("{:?}", e))?
+        {
             Some(hex_key) => {
                 let bytes = hex::decode(hex_key)?;
                 let bytes: [u8; 32] = bytes
@@ -74,12 +82,12 @@ impl FreenetService {
 }
 
 impl BaseInterface for FreenetService {
-    /// Returns a list of contract IDs (keys) from the Freenet node state.
+    /// Returns a list of contract IDs (keys) from the local cache.
     fn get_contracts(&self) -> Result<Vec<String>, Box<dyn Error>> {
         Ok(get_contract_keys())
     }
 
-    /// Returns parameters and state for a given contract ID from the Freenet node state.
+    /// Returns parameters and state for a given contract ID from the local cache.
     fn get_contract_parameters_and_state(&self, id: String) -> Result<Contract, Box<dyn Error>> {
         match get_contract_state(&id) {
             Some((state, parameters)) => Ok(Contract { state, parameters }),
@@ -89,42 +97,55 @@ impl BaseInterface for FreenetService {
 
     /// Publish a delta update to a contract on the Freenet network.
     ///
-    /// This computes the new state locally, then sends an update to the network.
+    /// This computes the new state locally, sends an update to the network,
+    /// and waits for acknowledgement.
     fn publish_delta(
         &self,
         id: String,
         delta: FullOrderStateV1Delta,
-    ) -> Result<FullOrderStateV1, Box<dyn Error>> {
-        use dioxus::prelude::{Readable, ReadableExt, Writable};
+    ) -> AsyncResult<PublishDeltaResponse> {
+        Box::pin(async move {
+            // Get current state and contract key
+            let (current_state, params, contract_key): (
+                FullOrderStateV1,
+                OrderParametersV1,
+                ContractKey,
+            ) = {
+                let contracts = CONTRACTS.read();
+                contracts
+                    .get(&id)
+                    .cloned()
+                    .ok_or_else(|| format!("Contract not found: {}", id))?
+            };
 
-        // Get current state and contract key
-        let (current_state, params, contract_key): (FullOrderStateV1, OrderParametersV1, ContractKey) = {
-            let contracts = CONTRACTS.read();
-            contracts
-                .get(&id)
-                .cloned()
-                .ok_or_else(|| format!("Contract not found: {}", id))?
-        };
+            // Compute new state by applying delta
+            let mut new_state: FullOrderStateV1 = current_state.clone();
+            new_state
+                .apply_delta(&current_state, &params, &Some(delta))
+                .map_err(|e| e.to_string())?;
 
-        // Compute new state by applying delta
-        let mut new_state: FullOrderStateV1 = current_state.clone();
-        new_state
-            .apply_delta(&current_state, &params, &Some(delta))
-            .map_err(|e| e.to_string())?;
+            // Update local state optimistically
+            {
+                let mut contracts = CONTRACTS.write();
+                contracts.insert(id.clone(), (new_state.clone(), params.clone(), contract_key));
+            }
 
-        // Update local state
-        {
-            let mut contracts = CONTRACTS.write();
-            contracts.insert(
-                id.clone(),
-                (new_state.clone(), params.clone(), contract_key),
-            );
-        }
+            // Send update to the network and wait for acknowledgement
+            let response_rx = send_contract_update_async(&id, &new_state)
+                .ok_or_else(|| format!("Failed to send update for contract: {}", id))?;
 
-        // Send update to the network
-        send_contract_update(&id, &new_state);
-
-        Ok(new_state)
+            // Wait for the response
+            match response_rx.await {
+                Ok(response) => Ok(PublishDeltaResponse {
+                    state: new_state,
+                    acknowledged: response.success,
+                }),
+                Err(_) => {
+                    // Channel was cancelled - this can happen if the connection drops
+                    Err("Update request was cancelled (connection lost?)".into())
+                }
+            }
+        })
     }
 
     /// Returns the user's public key (verifying key).
@@ -146,15 +167,40 @@ impl BaseInterface for FreenetService {
     /// Publish a new contract to the Freenet network.
     ///
     /// This sends a PUT request to the Freenet node with the contract code,
-    /// state, and parameters. The node will then propagate the contract to
-    /// the network.
-    fn publish_contract(&self, contract: Contract) -> Result<FullOrderStateV1, Box<dyn Error>> {
-        let contract_key = api_publish_contract(&contract.state, &contract.parameters);
+    /// state, and parameters. It waits for the network to acknowledge the
+    /// contract before returning.
+    fn publish_contract(&self, contract: Contract) -> AsyncResult<PublishContractResponse> {
+        let state = contract.state;
+        let params = contract.parameters;
 
-        // Subscribe to updates for this contract
-        subscribe_to_contract(&contract_key);
+        Box::pin(async move {
+            // Publish the contract and get a receiver for the response
+            let (contract_key, response_rx) = publish_contract_async(&state, &params);
 
-        Ok(contract.state)
+            // Subscribe to updates for this contract
+            if let Some(subscribe_rx) = subscribe_to_contract_async(&contract_key) {
+                // Wait for subscription to be confirmed (with a reasonable timeout)
+                let _ = subscribe_rx.await;
+            }
+
+            // Wait for the PUT response
+            match response_rx.await {
+                Ok(response) => {
+                    if response.success {
+                        Ok(PublishContractResponse {
+                            contract_key: response.contract_key,
+                            state,
+                        })
+                    } else {
+                        Err("Contract publication was rejected by the network".into())
+                    }
+                }
+                Err(_) => {
+                    // Channel was cancelled
+                    Err("Publish request was cancelled (connection lost?)".into())
+                }
+            }
+        })
     }
 
     /// Subscribe to changes in the contract list.

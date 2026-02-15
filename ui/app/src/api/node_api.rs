@@ -21,13 +21,13 @@ use freenet_stdlib::prelude::{
     UpdateData, WrappedContract, WrappedState,
 };
 use futures::channel::mpsc::{unbounded, UnboundedReceiver, UnboundedSender};
+use futures::channel::oneshot;
 use pizza_common::{FullOrderStateV1, OrderParametersV1};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{MessageEvent, WebSocket};
 
 /// Contract WASM bytes - embedded at compile time
-/// This should point to the compiled pizza-contract WASM
 const CONTRACT_WASM: &[u8] =
     include_bytes!("../../../../contracts/pizza-contract/build/pizza_contract.wasm");
 
@@ -55,22 +55,111 @@ pub static CONNECTION_STATUS: GlobalSignal<ConnectionStatus> =
     Global::new(|| ConnectionStatus::Disconnected);
 
 /// Stored contracts - maps contract key string to (state, parameters, ContractKey)
-/// We store the ContractKey object along with state/params because ContractKey doesn't implement FromStr
 pub static CONTRACTS: GlobalSignal<
     HashMap<String, (FullOrderStateV1, OrderParametersV1, ContractKey)>,
 > = Global::new(HashMap::new);
 
 // ============================================================================
-// Response Channels
+// Response Types
 // ============================================================================
 
-/// Channel for broadcasting contract updates to subscribers
+/// Response from a PUT (publish contract) operation
+#[derive(Clone, Debug)]
+pub struct PutResponse {
+    pub contract_key: String,
+    pub success: bool,
+}
+
+/// Response from an UPDATE operation
+#[derive(Clone, Debug)]
+pub struct UpdateResponse {
+    pub contract_key: String,
+    pub success: bool,
+}
+
+/// Response from a GET operation
+#[derive(Clone, Debug)]
+pub struct GetResponse {
+    pub contract_key: String,
+    pub state: Option<FullOrderStateV1>,
+}
+
+/// Response from a SUBSCRIBE operation
+#[derive(Clone, Debug)]
+pub struct SubscribeResponse {
+    pub contract_key: String,
+    pub subscribed: bool,
+}
+
+// ============================================================================
+// Pending Request Tracking
+// ============================================================================
+
 thread_local! {
+    /// Pending PUT requests - waiting for PutResponse
+    static PENDING_PUT: RefCell<HashMap<String, oneshot::Sender<PutResponse>>> =
+        RefCell::new(HashMap::new());
+
+    /// Pending UPDATE requests - waiting for UpdateResponse
+    static PENDING_UPDATE: RefCell<HashMap<String, oneshot::Sender<UpdateResponse>>> =
+        RefCell::new(HashMap::new());
+
+    /// Pending GET requests - waiting for GetResponse
+    static PENDING_GET: RefCell<HashMap<String, oneshot::Sender<GetResponse>>> =
+        RefCell::new(HashMap::new());
+
+    /// Pending SUBSCRIBE requests - waiting for SubscribeResponse
+    static PENDING_SUBSCRIBE: RefCell<HashMap<String, oneshot::Sender<SubscribeResponse>>> =
+        RefCell::new(HashMap::new());
+
+    /// Contract update subscribers
     static CONTRACT_UPDATE_SENDERS: RefCell<HashMap<String, Vec<UnboundedSender<(FullOrderStateV1, OrderParametersV1)>>>> =
         RefCell::new(HashMap::new());
+
+    /// Contract list subscribers
     static CONTRACT_LIST_SENDERS: RefCell<Vec<UnboundedSender<Vec<String>>>> =
         RefCell::new(Vec::new());
 }
+
+/// Register a pending PUT request and return a receiver for the response
+fn register_pending_put(contract_key: &str) -> oneshot::Receiver<PutResponse> {
+    let (tx, rx) = oneshot::channel();
+    PENDING_PUT.with(|pending| {
+        pending.borrow_mut().insert(contract_key.to_string(), tx);
+    });
+    rx
+}
+
+/// Register a pending UPDATE request and return a receiver for the response
+fn register_pending_update(contract_key: &str) -> oneshot::Receiver<UpdateResponse> {
+    let (tx, rx) = oneshot::channel();
+    PENDING_UPDATE.with(|pending| {
+        pending.borrow_mut().insert(contract_key.to_string(), tx);
+    });
+    rx
+}
+
+/// Register a pending GET request and return a receiver for the response
+fn register_pending_get(contract_key: &str) -> oneshot::Receiver<GetResponse> {
+    let (tx, rx) = oneshot::channel();
+    PENDING_GET.with(|pending| {
+        pending.borrow_mut().insert(contract_key.to_string(), tx);
+    });
+    rx
+}
+
+/// Register a pending SUBSCRIBE request and return a receiver for the response
+fn register_pending_subscribe(contract_key: &str) -> oneshot::Receiver<SubscribeResponse> {
+    let (tx, rx) = oneshot::channel();
+    PENDING_SUBSCRIBE.with(|pending| {
+        pending.borrow_mut().insert(contract_key.to_string(), tx);
+    });
+    rx
+}
+
+// ============================================================================
+// Stream Subscriptions
+// ============================================================================
 
 /// Subscribe to updates for a specific contract
 pub fn subscribe_to_contract_updates(
@@ -154,10 +243,7 @@ pub struct NodeConfig {
     pub api_url: String,
 }
 
-/// Interval between diagnostics queries (milliseconds).
 const POLL_INTERVAL_MS: i32 = 30_000;
-
-/// Prevent duplicate polling intervals across reconnections.
 static POLLING_STARTED: AtomicBool = AtomicBool::new(false);
 
 /// Gets the authorization token from the window global variable.
@@ -193,7 +279,6 @@ pub fn connect_node_api(config: &NodeConfig) {
 
     let mut url = config.api_url.clone();
 
-    // Add auth token if available
     if let Some(ref token) = *AUTH_TOKEN.read() {
         if url.contains('?') {
             url.push_str(&format!("&authToken={}", token));
@@ -231,7 +316,6 @@ pub fn connect_node_api(config: &NodeConfig) {
             send_request(&ws_for_open.borrow(), &request);
         }
 
-        // Start polling if not already started
         if !POLLING_STARTED.swap(true, Ordering::SeqCst) {
             start_polling_intervals();
         }
@@ -287,7 +371,6 @@ pub fn send_request_current(request: &ClientRequest) {
 
 fn start_polling_intervals() {
     let callback = Closure::<dyn FnMut()>::new(move || {
-        // Periodic health check - we could query diagnostics here
         debug!("Polling interval tick");
     });
     let window = web_sys::window().expect("no global window");
@@ -318,7 +401,6 @@ fn schedule_reconnect(url: String) {
 // Response Handling
 // ============================================================================
 
-/// Parse a bincode-encoded HostResponse and update state
 fn handle_host_response(bytes: &[u8]) {
     use freenet_stdlib::client_api::ClientError;
 
@@ -375,7 +457,6 @@ fn handle_contract_response(response: ContractResponse) {
         ContractResponse::SubscribeResponse { key, subscribed } => {
             handle_subscribe_response(key, subscribed);
         }
-        // Handle any future variants
         _ => {
             debug!("Received unhandled contract response type");
         }
@@ -386,16 +467,23 @@ fn handle_get_response(key: ContractKey, state: WrappedState) {
     let key_str = key.to_string();
     info!("Received GetResponse for contract: {}", key_str);
 
-    // Deserialize the state
     let state_bytes = state.as_ref();
     if state_bytes.is_empty() {
         debug!("Empty state received for {}", key_str);
+        // Resolve pending GET with None
+        PENDING_GET.with(|pending| {
+            if let Some(sender) = pending.borrow_mut().remove(&key_str) {
+                let _ = sender.send(GetResponse {
+                    contract_key: key_str.clone(),
+                    state: None,
+                });
+            }
+        });
         return;
     }
 
     match from_reader::<FullOrderStateV1, &[u8]>(state_bytes) {
         Ok(order_state) => {
-            // Get parameters from pending or existing
             let mut contracts = CONTRACTS.write();
             if let Some((_, params, contract_key)) = contracts.get(&key_str).cloned() {
                 contracts.insert(
@@ -404,9 +492,17 @@ fn handle_get_response(key: ContractKey, state: WrappedState) {
                 );
                 drop(contracts);
                 notify_contract_update(&key_str, &order_state, &params);
+
+                // Resolve pending GET
+                PENDING_GET.with(|pending| {
+                    if let Some(sender) = pending.borrow_mut().remove(&key_str) {
+                        let _ = sender.send(GetResponse {
+                            contract_key: key_str.clone(),
+                            state: Some(order_state),
+                        });
+                    }
+                });
             } else {
-                // We need to fetch the parameters - they should be embedded in the key
-                // For now, we'll store with default params and update later
                 warn!("Got state but no parameters for {}", key_str);
             }
         }
@@ -419,6 +515,16 @@ fn handle_get_response(key: ContractKey, state: WrappedState) {
 fn handle_put_response(key: ContractKey) {
     let key_str = key.to_string();
     info!("Contract published successfully: {}", key_str);
+
+    // Resolve pending PUT request
+    PENDING_PUT.with(|pending| {
+        if let Some(sender) = pending.borrow_mut().remove(&key_str) {
+            let _ = sender.send(PutResponse {
+                contract_key: key_str.clone(),
+                success: true,
+            });
+        }
+    });
 
     // Subscribe to updates for this contract
     let request = ClientRequest::ContractOp(ContractRequest::Subscribe {
@@ -436,6 +542,16 @@ fn handle_put_response(key: ContractKey) {
 fn handle_update_response(key: ContractKey) {
     let key_str = key.to_string();
     info!("Update acknowledged for contract: {}", key_str);
+
+    // Resolve pending UPDATE request
+    PENDING_UPDATE.with(|pending| {
+        if let Some(sender) = pending.borrow_mut().remove(&key_str) {
+            let _ = sender.send(UpdateResponse {
+                contract_key: key_str,
+                success: true,
+            });
+        }
+    });
 }
 
 fn handle_update_notification(key: ContractKey, update: UpdateData<'static>) {
@@ -448,7 +564,6 @@ fn handle_update_notification(key: ContractKey, update: UpdateData<'static>) {
             UpdateData::State(new_state_bytes) => {
                 match from_reader::<FullOrderStateV1, &[u8]>(new_state_bytes.as_ref()) {
                     Ok(new_state) => {
-                        // Merge the new state with current state
                         let mut merged = current_state.clone();
                         if let Err(e) = pizza_common::ComposableState::merge(
                             &mut merged,
@@ -506,8 +621,6 @@ fn handle_update_notification(key: ContractKey, update: UpdateData<'static>) {
         }
     } else {
         drop(contracts);
-        // We received an update for a contract we don't have locally
-        // Request the full state
         let request = ClientRequest::ContractOp(ContractRequest::Get {
             key: key.clone().into(),
             return_contract_code: false,
@@ -520,9 +633,19 @@ fn handle_update_notification(key: ContractKey, update: UpdateData<'static>) {
 
 fn handle_subscribe_response(key: ContractKey, subscribed: bool) {
     let key_str = key.to_string();
+
+    // Resolve pending SUBSCRIBE request
+    PENDING_SUBSCRIBE.with(|pending| {
+        if let Some(sender) = pending.borrow_mut().remove(&key_str) {
+            let _ = sender.send(SubscribeResponse {
+                contract_key: key_str.clone(),
+                subscribed,
+            });
+        }
+    });
+
     if subscribed {
         info!("Subscribed to contract: {}", key_str);
-        // Request current state
         let request = ClientRequest::ContractOp(ContractRequest::Get {
             key: key.into(),
             return_contract_code: false,
@@ -536,10 +659,9 @@ fn handle_subscribe_response(key: ContractKey, subscribed: bool) {
 }
 
 // ============================================================================
-// Contract Operations
+// Contract Operations (Async)
 // ============================================================================
 
-/// Serialize state to CBOR bytes
 fn to_cbor_vec<T: serde::Serialize>(value: &T) -> Vec<u8> {
     let mut bytes = Vec::new();
     into_writer(value, &mut bytes).expect("CBOR serialization failed");
@@ -554,8 +676,13 @@ pub fn generate_contract_key(params: &OrderParametersV1) -> ContractKey {
     ContractKey::from_params_and_code(&params_obj, &code)
 }
 
-/// Publish a new contract to the Freenet network
-pub fn publish_contract(state: &FullOrderStateV1, params: &OrderParametersV1) -> String {
+/// Publish a new contract and return a future that resolves when acknowledged.
+///
+/// Returns the contract key string and a receiver for the response.
+pub fn publish_contract_async(
+    state: &FullOrderStateV1,
+    params: &OrderParametersV1,
+) -> (String, oneshot::Receiver<PutResponse>) {
     let state_bytes = to_cbor_vec(state);
     let params_bytes = to_cbor_vec(params);
 
@@ -564,7 +691,10 @@ pub fn publish_contract(state: &FullOrderStateV1, params: &OrderParametersV1) ->
     let contract_key = ContractKey::from_params_and_code(&params_obj, &code);
     let key_str = contract_key.to_string();
 
-    // Store locally first (with the contract key for later use)
+    // Register pending request before sending
+    let response_rx = register_pending_put(&key_str);
+
+    // Store locally first
     {
         let mut contracts = CONTRACTS.write();
         contracts.insert(
@@ -597,14 +727,17 @@ pub fn publish_contract(state: &FullOrderStateV1, params: &OrderParametersV1) ->
     let keys: Vec<String> = contracts.keys().cloned().collect();
     notify_contract_list_change(keys);
 
-    key_str
+    (key_str, response_rx)
 }
 
-/// Subscribe to an existing contract by key string
-/// Note: This requires the contract to already be in our CONTRACTS map
-pub fn subscribe_to_contract(contract_key_str: &str) {
+/// Subscribe to an existing contract and return a future that resolves when subscribed.
+pub fn subscribe_to_contract_async(
+    contract_key_str: &str,
+) -> Option<oneshot::Receiver<SubscribeResponse>> {
     let contracts = CONTRACTS.read();
     if let Some((_, _, contract_key)) = contracts.get(contract_key_str) {
+        let response_rx = register_pending_subscribe(contract_key_str);
+
         let request = ClientRequest::ContractOp(ContractRequest::Subscribe {
             key: contract_key.clone().into(),
             summary: None,
@@ -612,20 +745,28 @@ pub fn subscribe_to_contract(contract_key_str: &str) {
         drop(contracts);
         send_request_current(&request);
         info!("Subscribing to contract: {}", contract_key_str);
+        Some(response_rx)
     } else {
         error!(
             "Cannot subscribe to unknown contract: {}",
             contract_key_str
         );
+        None
     }
 }
 
-/// Send an update to a contract
-pub fn send_contract_update(contract_key_str: &str, state: &FullOrderStateV1) {
+/// Send an update to a contract and return a future that resolves when acknowledged.
+pub fn send_contract_update_async(
+    contract_key_str: &str,
+    state: &FullOrderStateV1,
+) -> Option<oneshot::Receiver<UpdateResponse>> {
     let contracts = CONTRACTS.read();
     if let Some((_, _, contract_key)) = contracts.get(contract_key_str) {
         let contract_key = contract_key.clone();
         drop(contracts);
+
+        // Register pending request
+        let response_rx = register_pending_update(contract_key_str);
 
         let state_bytes = to_cbor_vec(state);
         let request = ClientRequest::ContractOp(ContractRequest::Update {
@@ -634,20 +775,25 @@ pub fn send_contract_update(contract_key_str: &str, state: &FullOrderStateV1) {
         });
         send_request_current(&request);
         info!("Sending update to contract: {}", contract_key_str);
+        Some(response_rx)
     } else {
         error!("Invalid contract key: {}", contract_key_str);
+        None
     }
 }
 
-/// Send a delta update to a contract
-pub fn send_contract_delta(
+/// Send a delta update to a contract and return a future that resolves when acknowledged.
+pub fn send_contract_delta_async(
     contract_key_str: &str,
     delta: &pizza_common::FullOrderStateV1Delta,
-) {
+) -> Option<oneshot::Receiver<UpdateResponse>> {
     let contracts = CONTRACTS.read();
     if let Some((_, _, ref key)) = contracts.get(contract_key_str) {
         let contract_key: ContractKey = key.clone();
         drop(contracts);
+
+        // Register pending request
+        let response_rx = register_pending_update(contract_key_str);
 
         let delta_bytes = to_cbor_vec(delta);
         let request = ClientRequest::ContractOp(ContractRequest::Update {
@@ -656,22 +802,28 @@ pub fn send_contract_delta(
         });
         send_request_current(&request);
         info!("Sending delta to contract: {}", contract_key_str);
+        Some(response_rx)
     } else {
         error!("Invalid contract key: {}", contract_key_str);
+        None
     }
 }
 
-/// Get contract from local state
+// ============================================================================
+// Synchronous helpers (for reading cached state)
+// ============================================================================
+
+/// Get contract from local state (synchronous, reads from cache)
 pub fn get_contract_state(contract_key: &str) -> Option<(FullOrderStateV1, OrderParametersV1)> {
     let contracts = CONTRACTS.read();
-    contracts.get(contract_key).map(
-        |(state, params, _): &(FullOrderStateV1, OrderParametersV1, ContractKey)| {
+    contracts
+        .get(contract_key)
+        .map(|(state, params, _): &(FullOrderStateV1, OrderParametersV1, ContractKey)| {
             (state.clone(), params.clone())
-        },
-    )
+        })
 }
 
-/// Get all contract keys
+/// Get all contract keys (synchronous, reads from cache)
 pub fn get_contract_keys() -> Vec<String> {
     let contracts = CONTRACTS.read();
     contracts.keys().cloned().collect()
