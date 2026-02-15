@@ -2520,6 +2520,7 @@ dependencies = [
  "futures",
  "getrandom 0.2.17",
  "gloo-timers",
+ "hex",
  "js-sys",
  "log",
  "pizza-common",

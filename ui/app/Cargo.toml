@@ -47,6 +47,7 @@ chrono.workspace = true
 
 # Utils
 thiserror.workspace = true
+hex = "0.4"
 log = "0.4"
 console_log = "1"
 console_error_panic_hook = "0.1"
