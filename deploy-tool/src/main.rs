@@ -41,6 +41,8 @@ enum Commands {
     Dev {},
     /// Initial deployment of the webapp
     InitialWebDeploy {},
+    /// Get web contract id
+    GetWebContractId {}
 }
 
 fn execute(cmd: &mut Command) -> Result<(), Box<dyn Error>> {
@@ -52,7 +54,7 @@ fn execute(cmd: &mut Command) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn cargo_bin_or_path(cmd: &str) -> String {
+fn cargo_bin_or_path(cmd: &str, pkg: &str) -> String {
     if let Ok(path) = std::env::var("PATH") {
         for p in std::env::split_paths(&path) {
             let bin_path = p.join(cmd);
@@ -67,7 +69,7 @@ fn cargo_bin_or_path(cmd: &str) -> String {
     home.push(cmd);
     if !home.exists() {
         println!("fdev not found, installing...");
-        execute(Command::new("cargo").args(["install", "fdev"])).unwrap();
+        execute(Command::new("cargo").args(["install", pkg])).unwrap();
     }
     home.to_string_lossy().to_string()
 }
@@ -121,7 +123,7 @@ fn fdev_publish(
     state: PathBuf,
 ) -> Result<(), Box<dyn Error>> {
     println!("Publishing contract...");
-    execute(Command::new(cargo_bin_or_path("fdev"))
+    execute(Command::new(cargo_bin_or_path("fdev", "fdev"))
         .args([
             "publish",
             "--code",
@@ -131,6 +133,21 @@ fn fdev_publish(
             "contract",
             "--state",
             &state.to_string_lossy(),
+        ]))
+}
+
+fn fdev_get_contract_id(
+    contract_wasm: PathBuf,
+    webapp_parameters: PathBuf,
+) -> Result<(), Box<dyn Error>> {
+    println!("Contract ID:");
+    execute(Command::new(cargo_bin_or_path("fdev", "fdev"))
+        .args([
+            "get-contract-id",
+            "--code",
+            &contract_wasm.to_string_lossy(),
+            "--parameters",
+            &webapp_parameters.to_string_lossy(),
         ]))
 }
 
@@ -222,6 +239,18 @@ fn initial_web_deploy() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+fn get_web_contract_id() -> Result<(), Box<dyn Error>> {
+    let contract_wasm = default_storage_path("web.contract.wasm");
+    let webapp_parameters = default_storage_path("webapp.parameters");
+
+    fdev_get_contract_id(
+        contract_wasm,
+        webapp_parameters,
+    )?;
+
+    Ok(())
+}
+
 fn merge_state(
     metadata_path: &PathBuf,
     webapp_archive_path: &PathBuf,
@@ -244,5 +273,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         Commands::Deploy { version } => deploy(version),
         Commands::Dev {} => dev(),
         Commands::InitialWebDeploy {} => initial_web_deploy(),
+        Commands::GetWebContractId {} => get_web_contract_id(),
     }
 }

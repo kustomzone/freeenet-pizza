@@ -19,12 +19,11 @@ pub fn OrderViewComponent(
     let mut contract = use_signal(|| base.get_contract_parameters_and_state(id.clone()).ok());
 
     use_effect({
-        let base = base.clone();
         let id = id.clone();
         move || {
-            let base = base.clone();
             let id = id.clone();
             spawn(async move {
+                let base = use_context::<LocalStorageService>();
                 let mut stream = base.subscribe_contract_state(id);
                 while let Some(new_contract) = stream.next().await {
                     contract.set(Some(new_contract));
@@ -76,7 +75,7 @@ pub fn OrderViewComponent(
 
             let handle_update_paid = {
                 let id = id.clone();
-                let base = base.clone();
+                let base = use_context::<LocalStorageService>();
                 let sk = sk.clone();
                 let c = c.clone();
                 move |target_user: VerifyingKey, is_paid: bool| {
