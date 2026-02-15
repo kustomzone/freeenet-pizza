@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use crate::Contract;
+use crate::app::{Contract, Route};
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use pizza_common::{ComposableState, FullOrderStateV1Delta};
 use pizza_common::order_state::{ItemContentV1, ItemV1, AuthorizedItemV1, Paid, AuthorizedPaidV1};

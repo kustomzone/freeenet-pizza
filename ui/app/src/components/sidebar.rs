@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use crate::Contract;
+use crate::app::{Contract, Route};
 use ed25519_dalek::SigningKey;
 use pizza_common::order_state::ItemContentV1;
 
@@ -55,7 +55,7 @@ pub fn Sidebar(
 
                             rsx! {
                                 Link {
-                                    to: url,
+                                    to: Route::OrderPage { id: order_id },
                                     li {
                                         class: if is_active { "order-item active" } else { "order-item" },
                                         div {

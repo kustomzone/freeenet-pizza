@@ -1,7 +1,6 @@
 use dioxus::prelude::*;
 use dioxus::prelude::Router;
 
-pub mod components;
 use crate::components::{NewOrderDialog, OrderViewComponent, Sidebar};
 use pizza_common::order_state::*;
 use chrono::Utc;
@@ -10,6 +9,7 @@ use ed25519_dalek::SigningKey;
 use ed25519_dalek::VerifyingKey;
 
 #[derive(Clone, Routable, Debug, PartialEq)]
+#[rustfmt::skip]
 pub enum Route {
     #[layout(AppContent)]
         #[route("/")]
@@ -19,6 +19,13 @@ pub enum Route {
     #[end_layout]
     #[route("/not-found/:..route")]
     PageNotFound { route: Vec<String> },
+}
+
+#[component]
+fn OrderPage(id: String) -> Element {
+    rsx! {
+        OrderViewComponent { contracts: use_context::<Signal<Vec<Contract>>>(), sk: use_context::<Signal<SigningKey>>(), id: id }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]

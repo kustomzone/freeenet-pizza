@@ -8,7 +8,7 @@ pizza-common = { path = "../../common" }
 freenet-stdlib = { workspace = true, features = ["net"] }
 
 # UI Framework
-dioxus = { version = "0.7", features = ["web"] }
+dioxus = { version = "0.7", features = ["web", "router"] }
 dioxus-free-icons = { version = "0.10", features = ["font-awesome-solid", "font-awesome-regular"] }
 
 # Async
