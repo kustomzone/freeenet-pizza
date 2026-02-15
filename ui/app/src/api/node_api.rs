@@ -8,13 +8,45 @@ use freenet_stdlib::client_api::{
     NodeQuery, QueryResponse,
 };
 use freenet_stdlib::prelude::tracing;
+use freenet_stdlib::prelude::tracing::{debug, error, info};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{MessageEvent, WebSocket};
 
+pub static AUTH_TOKEN: GlobalSignal<Option<String>> = Global::new(|| None);
+
+/// Gets the authorization token from the window global variable.
+/// The Freenet HTTP gateway injects this token into the HTML as:
+/// <script>window.__FREENET_AUTH_TOKEN__ = "token_value";</script>
+fn get_auth_token_from_window() {
+    if let Some(win) = web_sys::window() {
+        match js_sys::Reflect::get(&win, &"__FREENET_AUTH_TOKEN__".into()) {
+            Ok(token_value) => {
+                let location = win.location();
+                let host = location.host().unwrap_or_default();
+                let protocol = location.protocol().unwrap_or_default();
+
+                if let Some(token) = token_value.as_string() {
+                    info!("Found auth token from window global");
+                    *AUTH_TOKEN.write() = Some(token);
+                    *NODE_HTTP_BASE.write() = format!("{}//{}", protocol, host)
+                } else if token_value.is_undefined() || token_value.is_null() {
+                    debug!("Auth token not injected by gateway (running locally?)");
+                    // Running
+                    *NODE_HTTP_BASE.write() = "http://127.0.0.1:7509".into();
+                } else {
+                    debug!("Auth token has unexpected type");
+                }
+            }
+            Err(err) => {
+                error!("Failed to read auth token from window: {:?}", err);
+            }
+        }
+    }
+}
+
 /// HTTP base URL for the node
-pub static NODE_HTTP_BASE: GlobalSignal<String> =
-    Global::new(|| "http://127.0.0.1:7509".to_string());
+pub static NODE_HTTP_BASE: GlobalSignal<String> = Global::new(|| "http://127.0.0.1:7509".into());
 
 #[derive(Clone, Debug)]
 pub struct NodeConfig {
