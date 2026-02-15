@@ -7,7 +7,7 @@ use chrono::Utc;
 use crate::services::{FreenetService, BaseService};
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use futures::StreamExt;
-use crate::api::{get_auth_token_from_window, NodeConfig, connect_node_api, NODE_HTTP_BASE};
+use crate::api::{get_auth_token_from_window, NodeConfig, connect_node_api, NODE_HTTP_BASE, AUTH_TOKEN};
 
 #[derive(Clone, Routable, Debug, PartialEq)]
 #[rustfmt::skip]
@@ -57,7 +57,9 @@ pub fn App() -> Element {
 
     use_effect(|| {
         let api_url = NODE_HTTP_BASE.read().clone();
-        let api_url = api_url.replace("http", "ws") + "/v1/contract/command";
+        let auth_token = AUTH_TOKEN.read().clone();
+        let auth_token = if auth_token.is_none() { "" } else { &*(vec!["&authToken=", &*auth_token.unwrap()].join("")) };
+        let api_url = api_url.replace("http", "ws") + "/v1/contract/command?encodingProtocol=native" + auth_token;
         connect_node_api(&NodeConfig { api_url });
     });
 
