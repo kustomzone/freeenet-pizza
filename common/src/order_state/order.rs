@@ -81,6 +81,10 @@ impl ComposableState for AuthorizedOrderV1 {
                 ));
             }
 
+            if delta.order.currency.len() == 0 || delta.order.currency.len() > 3 {
+                return Err(format!("Currency can be 1-3 chars, but is {} chars", delta.order.currency.len()))
+            }
+
             // If all checks pass, apply the delta
             self.order = delta.order.clone();
             self.signature = delta.signature;
@@ -139,6 +143,7 @@ impl Default for Order {
     fn default() -> Self {
         Order {
             name: "".parse().unwrap(),
+            currency: "$".parse().unwrap(),
             order_version: 0,
         }
     }
@@ -159,5 +164,6 @@ impl fmt::Debug for AuthorizedOrderV1 {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Order {
     pub name: String,
+    pub currency: String,
     pub order_version: u32,
 }
