@@ -60,6 +60,8 @@ fn AppContent() -> Element {
     };
 
     rsx! {
+        Stylesheet { href: asset!("/assets/main.css") }
+
         div {
             class: "app-container",
             Sidebar {
