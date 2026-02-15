@@ -24,8 +24,11 @@ pub enum Route {
 
 #[component]
 fn OrderPage(id: String) -> Element {
+    let contracts = use_context::<Signal<HashMap<String, Contract>>>();
+    let id_for_memo = id.clone();
+    let contract = use_memo(move || contracts.read().get(&id_for_memo).cloned());
     rsx! {
-        OrderViewComponent { contracts: use_context::<Signal<HashMap<String, Contract>>>(), sk: use_context::<Signal<SigningKey>>(), id: id }
+        OrderViewComponent { contract: contract, sk: use_context::<Signal<SigningKey>>(), id: id }
     }
 }
 
@@ -73,8 +76,12 @@ fn AppContent() -> Element {
             }
             main {
                 match route {
-                    Route::OrderPage { id: ref_id } => rsx! {
-                        OrderViewComponent { contracts: contracts, sk: sk, id: ref_id.clone() }
+                    Route::OrderPage { id: ref_id } => {
+                        let id_for_memo = ref_id.clone();
+                        let contract = use_memo(move || contracts.read().get(&id_for_memo).cloned());
+                        rsx! {
+                            OrderViewComponent { contract, sk: sk, id: ref_id.clone() }
+                        }
                     },
                     _ => rsx! {
                         Outlet::<Route> {}

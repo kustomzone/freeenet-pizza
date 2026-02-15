@@ -7,13 +7,12 @@ use pizza_common::order_state::{ItemContentV1, ItemV1, AuthorizedItemV1, Paid, A
 
 #[component]
 pub fn OrderViewComponent(
-    mut contracts: Signal<HashMap<String, Contract>>,
+    contract: ReadSignal<Option<Contract>>,
     sk: Signal<SigningKey>,
     id: String,
 ) -> Element {
     let order_id = id;
-
-    let contract = contracts.read().get(&order_id).cloned();
+    let mut contracts = use_context::<Signal<HashMap<String, Contract>>>();
 
     let user_vk = sk.read().verifying_key();
 
@@ -26,7 +25,7 @@ pub fn OrderViewComponent(
     let mut edit_mode = use_signal(|| false);
     let mut show_invite_copied = use_signal(|| false);
 
-    let user_item = contract.as_ref().and_then(|c| {
+    let user_item = contract.read().as_ref().and_then(|c| {
         let vk = user_vk;
         c.state.items.items.iter().find_map(|ai| {
             if ai.item.signed_by == vk {
@@ -42,7 +41,7 @@ pub fn OrderViewComponent(
         })
     });
 
-    let total_cents = contract.as_ref().map(|c| {
+    let total_cents = contract.read().as_ref().map(|c| {
         c.state.items.items.iter().filter_map(|ai| {
             match &ai.item.content {
                 ItemContentV1::Item { price_cents, .. } => Some(*price_cents),
@@ -51,7 +50,7 @@ pub fn OrderViewComponent(
         }).sum::<u64>()
     }).unwrap_or(0);
 
-    let paid_cents = contract.as_ref().map(|c| {
+    let paid_cents = contract.read().as_ref().map(|c| {
         c.state.items.items.iter().filter_map(|ai| {
             match &ai.item.content {
                 ItemContentV1::Item { price_cents, .. } => {
@@ -63,7 +62,7 @@ pub fn OrderViewComponent(
         }).sum::<u64>()
     }).unwrap_or(0);
 
-    let items = contract.as_ref().map(|c| {
+    let items = contract.read().as_ref().map(|c| {
         c.state.items.items.iter().filter_map(|ai| {
             match &ai.item.content {
                 ItemContentV1::Item { display_name, order, price_cents } => {
@@ -99,7 +98,7 @@ pub fn OrderViewComponent(
             let user_vk_val = user_key.verifying_key();
 
             let current_order_id = order_id.clone();
-            contracts.with_mut(|all_contracts| {
+            contracts.with_mut(|all_contracts: &mut HashMap<String, Contract>| {
                 if let Some(c) = all_contracts.get_mut(&current_order_id) {
                     let next_version = c.state.items.items.iter()
                         .find(|it| it.item.signed_by == user_vk_val)
@@ -154,7 +153,7 @@ pub fn OrderViewComponent(
             let user_vk_val = user_key.verifying_key();
 
             let current_order_id = order_id.clone();
-            contracts.with_mut(|all_contracts| {
+            contracts.with_mut(|all_contracts: &mut HashMap<String, Contract>| {
                 if let Some(c) = all_contracts.get_mut(&current_order_id) {
                     if let Some(pos) = c.state.items.items.iter().position(|it| it.item.signed_by == user_vk_val) {
                         let existing = &c.state.items.items[pos];
@@ -197,7 +196,7 @@ pub fn OrderViewComponent(
             let user_vk_val = user_vk;
             let owner_sk = sk.read().clone();
             let current_order_id = order_id.clone();
-            contracts.with_mut(|all_contracts| {
+            contracts.with_mut(|all_contracts: &mut HashMap<String, Contract>| {
                 if let Some(c) = all_contracts.get_mut(&current_order_id) {
                     if let Some(item) = c.state.items.items.iter().find(|it| it.item.signed_by == user_vk_val) {
                         let new_item = ItemV1 {
@@ -224,7 +223,7 @@ pub fn OrderViewComponent(
         move |target_user: VerifyingKey, is_paid: bool| {
             let owner_sk = sk.read().clone();
             let current_order_id = order_id.clone();
-            contracts.with_mut(|all_contracts| {
+            contracts.with_mut(|all_contracts: &mut HashMap<String, Contract>| {
                 if let Some(c) = all_contracts.get_mut(&current_order_id) {
                     // Verify caller is owner
                     if owner_sk.verifying_key() != c.parameters.owner {
@@ -252,7 +251,7 @@ pub fn OrderViewComponent(
     let mut handle_update_paid = use_signal(|| handle_update_paid);
 
     rsx! {
-        match contract {
+        match contract.read().as_ref() {
             None => rsx! {
                 div {
                     class: "empty-state",
@@ -545,7 +544,7 @@ pub fn OrderViewComponent(
                                                 let ord = it.2.clone();
                                                 let price_cents = it.3;
                                                 let is_own = user_key == user_vk;
-                                                let item_paid = contract.as_ref().and_then(|c| {
+                                                let item_paid = contract.read().as_ref().and_then(|c| {
                                                     c.state.paid.paid.values.get(&user_key).copied()
                                                 }).unwrap_or(false);
 
