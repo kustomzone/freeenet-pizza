@@ -69,11 +69,11 @@ fn AppContent() -> Element {
             if let Ok(ids) = base.get_contracts() {
                 let mut loaded_contracts = HashMap::new();
                 for id in ids {
-                    if let Ok((state, parameters)) = base.get_contract_parameters_and_state(id.clone()) {
-                        let vk = parameters.owner;
+                    if let Ok(contract) = base.get_contract_parameters_and_state(id.clone()) {
+                        let vk = contract.parameters.owner;
                         loaded_contracts.insert(id.clone(), Contract {
-                            state,
-                            parameters,
+                            state: contract.state,
+                            parameters: contract.parameters,
                             sk: None,
                             vk,
                             id,
@@ -94,11 +94,11 @@ fn AppContent() -> Element {
                 
                 for id in ids {
                     if !current_contracts.contains_key(&id) {
-                        if let Ok((state, parameters)) = base.get_contract_parameters_and_state(id.clone()) {
-                            let vk = parameters.owner;
+                        if let Ok(contract) = base.get_contract_parameters_and_state(id.clone()) {
+                            let vk = contract.parameters.owner;
                             current_contracts.insert(id.clone(), Contract {
-                                state,
-                                parameters,
+                                state: contract.state,
+                                parameters: contract.parameters,
                                 sk: None,
                                 vk,
                                 id,
@@ -153,7 +153,12 @@ fn AppContent() -> Element {
                             ..Default::default()
                         };
                         
-                        if let Ok(_) = base.publish_contract(state, parameters) {
+                        let contract = crate::services::Contract {
+                            state,
+                            parameters,
+                        };
+                        
+                        if let Ok(_) = base.publish_contract(contract) {
                             show_new_order.set(false);
                         }
                     },
