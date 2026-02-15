@@ -96,6 +96,11 @@ body {
     border-top: 1px solid rgba(255,255,255,0.1);
 }
 
+.item-actions > * {
+    margin-left: 6px;
+    margin-right: 6px;
+}
+
 /* Main Content */
 main {
     flex: 1;
