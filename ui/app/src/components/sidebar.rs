@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use dioxus::prelude::*;
 use crate::app::{Contract, Route};
+use crate::api::{CONNECTION_STATUS, ConnectionStatus};
 use ed25519_dalek::SigningKey;
 use pizza_common::order_state::ItemContentV1;
 
@@ -12,6 +13,38 @@ pub fn Sidebar(
     selected_order_id: Option<String>,
 ) -> Element {
     let user_vk = sk.read().verifying_key();
+    let connection_status = CONNECTION_STATUS.read();
+
+    let status_indicator = match &*connection_status {
+        ConnectionStatus::Connected => rsx! {
+            span {
+                class: "status-indicator connected",
+                title: "Connected to Freenet node",
+                "●"
+            }
+        },
+        ConnectionStatus::Connecting => rsx! {
+            span {
+                class: "status-indicator connecting",
+                title: "Connecting to Freenet node...",
+                "○"
+            }
+        },
+        ConnectionStatus::Disconnected => rsx! {
+            span {
+                class: "status-indicator disconnected",
+                title: "Disconnected from Freenet node",
+                "●"
+            }
+        },
+        ConnectionStatus::Error(e) => rsx! {
+            span {
+                class: "status-indicator error",
+                title: "Connection error: {e}",
+                "!"
+            }
+        },
+    };
 
     rsx! {
         aside {
@@ -22,6 +55,7 @@ pub fn Sidebar(
                     span { "🍕" }
                     span { "Pizza Orders" }
                 }
+                {status_indicator}
             }
 
             div {
