@@ -4,10 +4,10 @@ use dioxus::prelude::*;
 use crate::components::{NewOrderDialog, OrderViewComponent, Sidebar};
 use pizza_common::order_state::*;
 use chrono::Utc;
-use ed25519_dalek::SigningKey;
-use ed25519_dalek::VerifyingKey;
-use crate::services::{BaseInterface, LocalStorageService};
+use crate::services::{LocalStorageService, BaseService};
+use ed25519_dalek::{SigningKey, VerifyingKey};
 use futures::StreamExt;
+use crate::api::get_auth_token_from_window;
 
 #[derive(Clone, Routable, Debug, PartialEq)]
 #[rustfmt::skip]
@@ -49,7 +49,11 @@ fn OrderPage(id: String) -> Element {
 
 #[component]
 pub fn App() -> Element {
-    use_context_provider(|| LocalStorageService::new().expect("Failed to create LocalStorageService"));
+    use_context_provider(|| {
+        let storage = LocalStorageService::new().expect("Failed to create LocalStorageService");
+        BaseService(std::rc::Rc::new(storage))
+    });
+    get_auth_token_from_window();
 
     rsx! {
         Router::<Route> {}
@@ -58,7 +62,7 @@ pub fn App() -> Element {
 
 #[component]
 fn AppContent() -> Element {
-    let base = use_context::<LocalStorageService>();
+    let base = use_context::<BaseService>();
     let base_for_dialog = base.clone();
     let sk = base.get_private_key().unwrap();
     let sk_signal = use_context_provider(|| Signal::new(sk.clone()));

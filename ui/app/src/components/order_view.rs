@@ -1,6 +1,5 @@
 use dioxus::prelude::*;
-use crate::services::LocalStorageService;
-use crate::services::BaseInterface;
+use crate::services::BaseService;
 use crate::components::YourOrderSection;
 use ed25519_dalek::VerifyingKey;
 use pizza_common::FullOrderStateV1Delta;
@@ -12,7 +11,7 @@ use futures::StreamExt;
 pub fn OrderViewComponent(
     id: String,
 ) -> Element {
-    let base = use_context::<LocalStorageService>();
+    let base = use_context::<BaseService>();
     let sk = base.get_private_key().unwrap();
     let user_vk = base.get_public_key().unwrap();
     
@@ -23,7 +22,7 @@ pub fn OrderViewComponent(
         move || {
             let id = id.clone();
             spawn(async move {
-                let base = use_context::<LocalStorageService>();
+                let base = use_context::<BaseService>();
                 let mut stream = base.subscribe_contract_state(id);
                 while let Some(new_contract) = stream.next().await {
                     contract.set(Some(new_contract));
@@ -75,7 +74,7 @@ pub fn OrderViewComponent(
 
             let handle_update_paid = {
                 let id = id.clone();
-                let base = use_context::<LocalStorageService>();
+                let base = use_context::<BaseService>();
                 let sk = sk.clone();
                 let c = c.clone();
                 move |target_user: VerifyingKey, is_paid: bool| {

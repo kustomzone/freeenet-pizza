@@ -18,7 +18,7 @@ pub static AUTH_TOKEN: GlobalSignal<Option<String>> = Global::new(|| None);
 /// Gets the authorization token from the window global variable.
 /// The Freenet HTTP gateway injects this token into the HTML as:
 /// <script>window.__FREENET_AUTH_TOKEN__ = "token_value";</script>
-fn get_auth_token_from_window() {
+pub fn get_auth_token_from_window() {
     if let Some(win) = web_sys::window() {
         match js_sys::Reflect::get(&win, &"__FREENET_AUTH_TOKEN__".into()) {
             Ok(token_value) => {

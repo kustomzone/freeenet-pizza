@@ -50,10 +50,10 @@ pub trait BaseInterface {
     ) -> Result<FullOrderStateV1, Box<dyn Error>>;
 
     /// Subscribe to contract list changes
-    fn subscribe_contracts(&self) -> Pin<Box<dyn Stream<Item = Vec<String>> + Send>>;
+    fn subscribe_contracts(&self) -> Pin<Box<dyn Stream<Item = Vec<String>>>>;
 
     /// Subscribe to contract state changes
-    fn subscribe_contract_state(&self, id: String) -> Pin<Box<dyn Stream<Item = Contract> + Send>>;
+    fn subscribe_contract_state(&self, id: String) -> Pin<Box<dyn Stream<Item = Contract>>>;
 }
 
 #[derive(Clone)]
@@ -61,6 +61,16 @@ pub struct LocalStorageService {
     storage: Storage,
     contract_subscribers: Arc<Mutex<Vec<futures::channel::mpsc::UnboundedSender<Vec<String>>>>>,
     state_subscribers: Arc<Mutex<HashMap<String, Vec<futures::channel::mpsc::UnboundedSender<Contract>>>>>,
+}
+
+#[derive(Clone)]
+pub struct BaseService(pub std::rc::Rc<dyn BaseInterface>);
+
+impl std::ops::Deref for BaseService {
+    type Target = dyn BaseInterface;
+    fn deref(&self) -> &Self::Target {
+        &*self.0
+    }
 }
 
 const CONTRACTS_KEY: &str = "pizza_contracts";
@@ -189,14 +199,14 @@ impl BaseInterface for LocalStorageService {
         Ok(contract.state)
     }
 
-    fn subscribe_contracts(&self) -> Pin<Box<dyn Stream<Item = Vec<String>> + Send>> {
+    fn subscribe_contracts(&self) -> Pin<Box<dyn Stream<Item = Vec<String>>>> {
         let (tx, rx) = futures::channel::mpsc::unbounded();
         let mut subs = self.contract_subscribers.lock().unwrap();
         subs.push(tx);
         Box::pin(rx)
     }
 
-    fn subscribe_contract_state(&self, id: String) -> Pin<Box<dyn Stream<Item = Contract> + Send>> {
+    fn subscribe_contract_state(&self, id: String) -> Pin<Box<dyn Stream<Item = Contract>>> {
         let (tx, rx) = futures::channel::mpsc::unbounded();
         let mut all_subs = self.state_subscribers.lock().unwrap();
         all_subs.entry(id).or_insert_with(Vec::new).push(tx);

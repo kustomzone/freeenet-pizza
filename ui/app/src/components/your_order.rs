@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use crate::services::{LocalStorageService, BaseInterface, Contract};
+use crate::services::{BaseService, Contract};
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use pizza_common::FullOrderStateV1Delta;
 use pizza_common::order_state::{ItemContentV1, ItemV1, AuthorizedItemV1};
@@ -12,7 +12,7 @@ pub fn YourOrderSection(
     user_vk: VerifyingKey,
     sk: SigningKey,
 ) -> Element {
-    let base = use_context::<LocalStorageService>();
+    let base = use_context::<BaseService>();
     
     // Form signals
     let mut display_name = use_signal(String::new);

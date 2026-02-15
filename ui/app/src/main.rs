@@ -8,6 +8,7 @@ mod services;
 mod api;
 
 use dioxus::prelude::*;
+use crate::api::get_auth_token_from_window;
 
 fn main() {
     // Set up logging and panic hook for WASM
