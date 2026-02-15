@@ -42,13 +42,8 @@ impl From<Contract> for crate::services::Contract {
 
 #[component]
 fn OrderPage(id: String) -> Element {
-    let contracts = use_context::<Signal<HashMap<String, Contract>>>();
-    let id_clone = id.clone();
-    let contract = use_memo(move || {
-        contracts.read().get(&id_clone).cloned().map(crate::services::Contract::from)
-    });
     rsx! {
-        OrderViewComponent { contract: contract, id: id }
+        OrderViewComponent { id: id }
     }
 }
 
@@ -65,8 +60,6 @@ pub fn App() -> Element {
 fn AppContent() -> Element {
     let base = use_context::<LocalStorageService>();
     let base_for_dialog = base.clone();
-    let mut bytes = [0u8; 32];
-    rand::Rng::fill(&mut rand::thread_rng(), &mut bytes);
     let sk = base.get_private_key().unwrap();
     let sk_signal = use_context_provider(|| Signal::new(sk.clone()));
 

@@ -1,7 +1,6 @@
 use dioxus::prelude::*;
 use crate::services::LocalStorageService;
 use crate::services::BaseInterface;
-use crate::services::Contract;
 use ed25519_dalek::VerifyingKey;
 use pizza_common::FullOrderStateV1Delta;
 use pizza_common::order_state::{ItemContentV1, ItemV1, AuthorizedItemV1, Paid, AuthorizedPaidV1};
@@ -10,13 +9,12 @@ use futures::StreamExt;
 #[component]
 pub fn OrderViewComponent(
     id: String,
-    contract: ReadSignal<Option<Contract>>,
 ) -> Element {
     let base = use_context::<LocalStorageService>();
     let sk = base.get_private_key().unwrap();
     let user_vk = base.get_public_key().unwrap();
     
-    let mut local_contract = use_signal(|| contract.peek().clone());
+    let mut contract = use_signal(|| base.get_contract_parameters_and_state(id.clone()).ok());
 
     use_effect({
         let base = base.clone();
@@ -27,7 +25,7 @@ pub fn OrderViewComponent(
             spawn(async move {
                 let mut stream = base.subscribe_contract_state(id);
                 while let Some(new_contract) = stream.next().await {
-                    local_contract.set(Some(new_contract));
+                    contract.set(Some(new_contract));
                 }
             });
         }
@@ -42,11 +40,8 @@ pub fn OrderViewComponent(
     let mut edit_mode = use_signal(|| false);
     let mut show_invite_copied = use_signal(|| false);
 
-    let contract_val = local_contract.read();
-    let contract_prop_read = contract.read();
-    let contract_ref = contract_val.as_ref().or(contract_prop_read.as_ref());
-
-    match contract_ref {
+    let c_opt = contract.read();
+    match c_opt.as_ref() {
         None => rsx! {
             div {
                 class: "empty-state",
@@ -64,7 +59,7 @@ pub fn OrderViewComponent(
                     if ai.item.signed_by == vk {
                         match &ai.item.content {
                             ItemContentV1::Item { display_name, order, price_cents } => {
-                                Some((display_name.clone(), order.clone(), price_cents.clone()))
+                                Some((display_name.clone(), order.clone(), *price_cents))
                             }
                             _ => None,
                         }
@@ -94,7 +89,7 @@ pub fn OrderViewComponent(
             let items_vec = c.state.items.items.iter().filter_map(|ai| {
                 match &ai.item.content {
                     ItemContentV1::Item { display_name, order, price_cents } => {
-                        Some((ai.item.signed_by, display_name.clone(), order.clone(), price_cents.clone()))
+                        Some((ai.item.signed_by, display_name.clone(), order.clone(), *price_cents))
                     }
                     _ => None,
                 }
