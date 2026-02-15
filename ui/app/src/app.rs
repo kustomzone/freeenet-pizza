@@ -34,16 +34,17 @@ pub struct Contract {
 #[component]
 fn OrderPage(id: String) -> Element {
     let contracts = use_context::<Signal<HashMap<String, Contract>>>();
-    let sk = use_context::<Signal<SigningKey>>();
     let id_clone = id.clone();
     let contract = use_memo(move || contracts.read().get(&id_clone).cloned());
     rsx! {
-        OrderViewComponent { contract: contract, sk: sk, id: id }
+        OrderViewComponent { contract: contract, id: id }
     }
 }
 
 #[component]
 pub fn App() -> Element {
+    use_context_provider(|| LocalStorageService::new().expect("Failed to create LocalStorageService"));
+
     rsx! {
         Router::<Route> {}
     }
@@ -51,61 +52,63 @@ pub fn App() -> Element {
 
 #[component]
 fn AppContent() -> Element {
+    let base = use_context::<LocalStorageService>();
+    let base_for_dialog = base.clone();
     let mut bytes = [0u8; 32];
     rand::Rng::fill(&mut rand::thread_rng(), &mut bytes);
-    let sk = use_context_provider(|| Signal::new(SigningKey::from_bytes(&bytes)));
+    let sk = base.get_private_key().unwrap();
+    let sk_signal = use_context_provider(|| Signal::new(sk.clone()));
 
     let mut contracts = use_context_provider(|| Signal::new(HashMap::<String, Contract>::new()));
     let mut show_new_order = use_signal(|| false);
 
     use_effect(move || {
+        let base = base.clone();
         spawn(async move {
-            if let Ok(base) = LocalStorageService::new() {
-                // Initial load
-                if let Ok(ids) = base.get_contracts() {
-                    let mut loaded_contracts = HashMap::new();
-                    for id in ids {
+            // Initial load
+            if let Ok(ids) = base.get_contracts() {
+                let mut loaded_contracts = HashMap::new();
+                for id in ids {
+                    if let Ok((state, parameters)) = base.get_contract_parameters_and_state(id.clone()) {
+                        let vk = parameters.owner;
+                        loaded_contracts.insert(id.clone(), Contract {
+                            state,
+                            parameters,
+                            sk: None,
+                            vk,
+                            id,
+                        });
+                    }
+                }
+                contracts.set(loaded_contracts);
+            }
+
+            // Subscribe to changes
+            let mut stream = base.subscribe_contracts();
+            while let Some(ids) = stream.next().await {
+                let mut current_contracts = contracts.peek().clone();
+                let mut changed = false;
+                
+                // Remove contracts that are no longer present
+                current_contracts.retain(|id, _| ids.contains(id));
+                
+                for id in ids {
+                    if !current_contracts.contains_key(&id) {
                         if let Ok((state, parameters)) = base.get_contract_parameters_and_state(id.clone()) {
                             let vk = parameters.owner;
-                            loaded_contracts.insert(id.clone(), Contract {
+                            current_contracts.insert(id.clone(), Contract {
                                 state,
                                 parameters,
                                 sk: None,
                                 vk,
                                 id,
                             });
+                            changed = true;
                         }
                     }
-                    contracts.set(loaded_contracts);
                 }
-
-                // Subscribe to changes
-                let mut stream = base.subscribe_contracts();
-                while let Some(ids) = stream.next().await {
-                    let mut current_contracts = contracts.peek().clone();
-                    let mut changed = false;
-                    
-                    // Remove contracts that are no longer present
-                    current_contracts.retain(|id, _| ids.contains(id));
-                    
-                    for id in ids {
-                        if !current_contracts.contains_key(&id) {
-                            if let Ok((state, parameters)) = base.get_contract_parameters_and_state(id.clone()) {
-                                let vk = parameters.owner;
-                                current_contracts.insert(id.clone(), Contract {
-                                    state,
-                                    parameters,
-                                    sk: None,
-                                    vk,
-                                    id,
-                                });
-                                changed = true;
-                            }
-                        }
-                    }
-                    if changed {
-                        contracts.set(current_contracts);
-                    }
+                if changed {
+                    contracts.set(current_contracts);
                 }
             }
         });
@@ -124,7 +127,7 @@ fn AppContent() -> Element {
             class: "app-container",
             Sidebar {
                 contracts: contracts,
-                sk: sk,
+                sk: sk_signal,
                 on_new_order: move |_| show_new_order.set(true),
                 selected_order_id: selected_order_id
             }
@@ -134,34 +137,25 @@ fn AppContent() -> Element {
 
             if show_new_order() {
                 NewOrderDialog {
-                    _sk: sk,
+                    sk: sk_signal,
                     on_create: move |name: String| {
-                        let id = format!("{}", rand::random::<u32>());
-                        let sk_val = sk.read().clone();
+                        let base = base_for_dialog.clone();
+                        let sk_val = sk_signal.read().clone();
                         let order = AuthorizedOrderV1::new(Order { name, order_version: 1 }, &sk_val);
-                        let paid = AuthorizedPaidV1::new(Paid::default(), &sk_val);
-                        let vk = sk_val.verifying_key();
-                        let contract = Contract {
-                            state: FullOrderStateV1 {
-                                order: order,
-                                items: ItemsV1::default(),
-                                paid: paid,
-                                ..Default::default()
-                            },
-                            parameters: OrderParametersV1 {
-                                owner: vk,
-                                created_at: Utc::now(),
-                            },
-                            id: id.clone(),
-                            sk: Some(sk_val),
-                            vk,
+                        let parameters = OrderParametersV1 {
+                            owner: sk_val.verifying_key(),
+                            created_at: Utc::now(),
                         };
-                        contracts.with_mut(|c| {
-                            c.insert(id.clone(), contract);
-                        });
-                        show_new_order.set(false);
-                        let nav = use_navigator();
-                        nav.push(Route::OrderPage { id });
+                        let state = FullOrderStateV1 {
+                            order: order,
+                            items: ItemsV1::default(),
+                            paid: AuthorizedPaidV1::new(Paid::default(), &sk_val),
+                            ..Default::default()
+                        };
+                        
+                        if let Ok(_) = base.publish_contract(state, parameters) {
+                            show_new_order.set(false);
+                        }
                     },
                     on_close: move |_| show_new_order.set(false)
                 }

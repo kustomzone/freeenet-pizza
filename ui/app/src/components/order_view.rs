@@ -1,20 +1,22 @@
 use std::collections::HashMap;
 use dioxus::prelude::*;
 use crate::app::Contract;
-use ed25519_dalek::{SigningKey, VerifyingKey};
+use crate::services::LocalStorageService;
+use crate::services::BaseInterface;
+use ed25519_dalek::VerifyingKey;
 use pizza_common::{ComposableState, FullOrderStateV1Delta};
 use pizza_common::order_state::{ItemContentV1, ItemV1, AuthorizedItemV1, Paid, AuthorizedPaidV1};
 
 #[component]
 pub fn OrderViewComponent(
     contract: ReadSignal<Option<Contract>>,
-    sk: Signal<SigningKey>,
     id: String,
 ) -> Element {
+    let base = use_context::<LocalStorageService>();
+    let sk = base.get_private_key().unwrap();
+    let user_vk = base.get_public_key().unwrap();
     let order_id = id;
     let mut contracts = use_context::<Signal<HashMap<String, Contract>>>();
-
-    let user_vk = sk.read().verifying_key();
 
     // Form signals
     let mut display_name = use_signal(String::new);
@@ -75,6 +77,8 @@ pub fn OrderViewComponent(
 
     let mut handle_add_item = {
         let order_id = order_id.clone();
+        let base = base.clone();
+        let sk = sk.clone();
         move |_e: FormEvent| {
             let dn = display_name.read().clone();
             let ot = order_text.read().clone();
@@ -94,7 +98,7 @@ pub fn OrderViewComponent(
                     return;
                 }
             };
-            let user_key = sk.read().clone();
+            let user_key = sk.clone();
             let user_vk_val = user_key.verifying_key();
 
             let current_order_id = order_id.clone();
@@ -105,7 +109,7 @@ pub fn OrderViewComponent(
                         .map(|it| it.item.version + 1)
                         .unwrap_or(1);
 
-                    let item = ItemV1 {
+                    let item_val = ItemV1 {
                         signed_by: user_vk_val,
                         owner_sign: false,
                         version: next_version,
@@ -115,10 +119,18 @@ pub fn OrderViewComponent(
                             price_cents: price,
                         },
                     };
+                    let delta = FullOrderStateV1Delta {
+                        order: None,
+                        items: Some(vec![AuthorizedItemV1::new(item_val.clone(), &user_key)]),
+                        paid: None,
+                        version: None,
+                    };
+                    let _ = base.publish_delta(current_order_id.clone(), delta);
+                    
                     let current_state = c.state.clone();
                     let _ = c.state.apply_delta(&current_state, &c.parameters, &Some(FullOrderStateV1Delta {
                         order: None,
-                        items: Some(vec![AuthorizedItemV1::new(item, &user_key)]),
+                        items: Some(vec![AuthorizedItemV1::new(item_val, &user_key)]),
                         paid: None,
                         version: None,
                     }));
@@ -134,6 +146,8 @@ pub fn OrderViewComponent(
 
     let mut handle_edit_item = {
         let order_id = order_id.clone();
+        let base = base.clone();
+        let sk = sk.clone();
         move |_e: FormEvent| {
             let dn = display_name.read().clone();
             let ot = order_text.read().clone();
@@ -149,7 +163,7 @@ pub fn OrderViewComponent(
                     return;
                 }
             };
-            let user_key = sk.read().clone();
+            let user_key = sk.clone();
             let user_vk_val = user_key.verifying_key();
 
             let current_order_id = order_id.clone();
@@ -182,6 +196,13 @@ pub fn OrderViewComponent(
                                 price_cents: price,
                             },
                         };
+                        let delta = FullOrderStateV1Delta {
+                            order: None,
+                            items: Some(vec![AuthorizedItemV1::new(new_item.clone(), &user_key)]),
+                            paid: None,
+                            version: None,
+                        };
+                        let _ = base.publish_delta(current_order_id.clone(), delta);
                         c.state.items.items[pos] = AuthorizedItemV1::new(new_item, &user_key);
                     }
                 }
@@ -192,9 +213,11 @@ pub fn OrderViewComponent(
 
     let mut handle_delete_item = {
         let order_id = order_id.clone();
+        let base = base.clone();
+        let sk = sk.clone();
         move || {
             let user_vk_val = user_vk;
-            let owner_sk = sk.read().clone();
+            let owner_sk = sk.clone();
             let current_order_id = order_id.clone();
             contracts.with_mut(|all_contracts: &mut HashMap<String, Contract>| {
                 if let Some(c) = all_contracts.get_mut(&current_order_id) {
@@ -205,6 +228,14 @@ pub fn OrderViewComponent(
                             content: ItemContentV1::Deleted {},
                             version: item.item.version + 1,
                         };
+                        let delta = FullOrderStateV1Delta {
+                            order: None,
+                            items: Some(vec![AuthorizedItemV1::new(new_item.clone(), &owner_sk)]),
+                            paid: None,
+                            version: None,
+                        };
+                        let _ = base.publish_delta(current_order_id.clone(), delta);
+
                         let current_state = c.state.clone();
                         let _ = c.state.apply_delta(&current_state, &c.parameters, &Some(FullOrderStateV1Delta {
                             order: None,
@@ -220,8 +251,10 @@ pub fn OrderViewComponent(
 
     let handle_update_paid = {
         let order_id = order_id.clone();
+        let base = base.clone();
+        let sk = sk.clone();
         move |target_user: VerifyingKey, is_paid: bool| {
-            let owner_sk = sk.read().clone();
+            let owner_sk = sk.clone();
             let current_order_id = order_id.clone();
             contracts.with_mut(|all_contracts: &mut HashMap<String, Contract>| {
                 if let Some(c) = all_contracts.get_mut(&current_order_id) {
@@ -242,6 +275,8 @@ pub fn OrderViewComponent(
                         paid: Some(AuthorizedPaidV1::new(new_paid, &owner_sk)),
                         version: None,
                     };
+                    let _ = base.publish_delta(current_order_id.clone(), delta.clone());
+
                     let current_state = c.state.clone();
                     let _ = c.state.apply_delta(&current_state, &c.parameters, &Some(delta));
                 }

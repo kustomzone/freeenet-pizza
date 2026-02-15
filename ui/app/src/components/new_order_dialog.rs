@@ -3,7 +3,7 @@ use ed25519_dalek::SigningKey;
 
 #[component]
 pub fn NewOrderDialog(
-    _sk: Signal<SigningKey>,
+    sk: Signal<SigningKey>,
     on_create: EventHandler<String>,
     on_close: EventHandler<()>,
 ) -> Element {

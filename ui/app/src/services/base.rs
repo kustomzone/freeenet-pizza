@@ -13,6 +13,7 @@ fn js_to_err(js: JsValue) -> Box<dyn Error> {
     format!("{:?}", js).into()
 }
 
+
 pub trait BaseInterface {
     /// Returns a list of contract IDs or names
     fn get_contracts(&self) -> Result<Vec<String>, Box<dyn Error>>;
@@ -50,6 +51,7 @@ pub trait BaseInterface {
     fn subscribe_contract_state(&self, id: String) -> Pin<Box<dyn Stream<Item = (FullOrderStateV1, OrderParametersV1)> + Send>>;
 }
 
+#[derive(Clone)]
 pub struct LocalStorageService {
     storage: Storage,
     contract_subscribers: Arc<Mutex<Vec<futures::channel::mpsc::UnboundedSender<Vec<String>>>>>,
