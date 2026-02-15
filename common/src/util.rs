@@ -29,6 +29,45 @@ pub fn truncated_base32(bytes: &[u8]) -> String {
     encoded.chars().take(8).collect()
 }
 
+pub fn format_price(cents: u64) -> String {
+    let dollars = cents / 100;
+    let cents_part = cents % 100;
+    format!("${}.{:02}", dollars, cents_part)
+}
+
+pub fn parse_price(input: &str) -> Result<u64, String> {
+    let clean: String = input
+        .chars()
+        .filter(|c| c.is_ascii_digit() || *c == '.' || *c == ',')
+        .collect();
+    if clean.is_empty() {
+        return Err("Price cannot be empty".to_string());
+    }
+
+    let split_at = if clean.contains(',') { ',' } else { '.' };
+
+    if let Some((dollars, cents)) = clean.split_once(split_at) {
+        let d: u64 = if dollars.is_empty() {
+            0
+        } else {
+            dollars
+                .parse()
+                .map_err(|_| "Invalid dollar amount".to_string())?
+        };
+        let mut c_str = cents.to_string();
+        c_str.push_str("00");
+        let c: u64 = c_str[..2]
+            .parse()
+            .map_err(|_| "Invalid cents amount".to_string())?;
+        Ok(d * 100 + c)
+    } else {
+        let d: u64 = clean
+            .parse()
+            .map_err(|_| "Invalid price format".to_string())?;
+        Ok(d * 100)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
