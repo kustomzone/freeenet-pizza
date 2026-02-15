@@ -4,6 +4,10 @@ use pizza_common::{FullOrderStateV1, FullOrderStateV1Delta, OrderParametersV1, C
 use web_sys::Storage;
 use serde_json;
 use wasm_bindgen::JsValue;
+use std::sync::{Arc, Mutex};
+use futures::Stream;
+use std::pin::Pin;
+use std::collections::HashMap;
 
 fn js_to_err(js: JsValue) -> Box<dyn Error> {
     format!("{:?}", js).into()
@@ -38,10 +42,18 @@ pub trait BaseInterface {
         state: FullOrderStateV1,
         parameters: OrderParametersV1,
     ) -> Result<FullOrderStateV1, Box<dyn Error>>;
+
+    /// Subscribe to contract list changes
+    fn subscribe_contracts(&self) -> Pin<Box<dyn Stream<Item = Vec<String>> + Send>>;
+
+    /// Subscribe to contract state changes
+    fn subscribe_contract_state(&self, id: String) -> Pin<Box<dyn Stream<Item = (FullOrderStateV1, OrderParametersV1)> + Send>>;
 }
 
 pub struct LocalStorageService {
     storage: Storage,
+    contract_subscribers: Arc<Mutex<Vec<futures::channel::mpsc::UnboundedSender<Vec<String>>>>>,
+    state_subscribers: Arc<Mutex<HashMap<String, Vec<futures::channel::mpsc::UnboundedSender<(FullOrderStateV1, OrderParametersV1)>>>>>,
 }
 
 const CONTRACTS_KEY: &str = "pizza_contracts";
@@ -51,7 +63,11 @@ impl LocalStorageService {
     pub fn new() -> Result<Self, Box<dyn Error>> {
         let window = web_sys::window().ok_or("no window")?;
         let storage = window.local_storage().map_err(js_to_err)?.ok_or("no local storage")?;
-        Ok(Self { storage })
+        Ok(Self { 
+            storage,
+            contract_subscribers: Arc::new(Mutex::new(Vec::new())),
+            state_subscribers: Arc::new(Mutex::new(HashMap::new())),
+        })
     }
 
     fn get_state_key(id: &str) -> String {
@@ -60,6 +76,22 @@ impl LocalStorageService {
 
     fn get_params_key(id: &str) -> String {
         format!("pizza_contract_params_{}", id)
+    }
+
+    fn notify_contract_subscribers(&self, contracts: Vec<String>) {
+        let mut subs = self.contract_subscribers.lock().unwrap();
+        subs.retain(|sub| {
+            sub.unbounded_send(contracts.clone()).is_ok()
+        });
+    }
+
+    fn notify_state_subscribers(&self, id: String, state: FullOrderStateV1, params: OrderParametersV1) {
+        let mut all_subs = self.state_subscribers.lock().unwrap();
+        if let Some(subs) = all_subs.get_mut(&id) {
+            subs.retain(|sub| {
+                sub.unbounded_send((state.clone(), params.clone())).is_ok()
+            });
+        }
     }
 }
 
@@ -94,6 +126,8 @@ impl BaseInterface for LocalStorageService {
 
         let state_json = serde_json::to_string(&new_state)?;
         self.storage.set_item(&Self::get_state_key(&id), &state_json).map_err(js_to_err)?;
+
+        self.notify_state_subscribers(id, new_state.clone(), params);
 
         Ok(new_state)
     }
@@ -139,10 +173,27 @@ impl BaseInterface for LocalStorageService {
         self.storage.set_item(&Self::get_params_key(&id), &params_json).map_err(js_to_err)?;
 
         let mut contracts = self.get_contracts()?;
-        contracts.push(id);
+        contracts.push(id.clone());
         let contracts_json = serde_json::to_string(&contracts)?;
         self.storage.set_item(CONTRACTS_KEY, &contracts_json).map_err(js_to_err)?;
 
+        self.notify_contract_subscribers(contracts);
+        self.notify_state_subscribers(id, state.clone(), parameters);
+
         Ok(state)
+    }
+
+    fn subscribe_contracts(&self) -> Pin<Box<dyn Stream<Item = Vec<String>> + Send>> {
+        let (tx, rx) = futures::channel::mpsc::unbounded();
+        let mut subs = self.contract_subscribers.lock().unwrap();
+        subs.push(tx);
+        Box::pin(rx)
+    }
+
+    fn subscribe_contract_state(&self, id: String) -> Pin<Box<dyn Stream<Item = (FullOrderStateV1, OrderParametersV1)> + Send>> {
+        let (tx, rx) = futures::channel::mpsc::unbounded();
+        let mut all_subs = self.state_subscribers.lock().unwrap();
+        all_subs.entry(id).or_insert_with(Vec::new).push(tx);
+        Box::pin(rx)
     }
 }

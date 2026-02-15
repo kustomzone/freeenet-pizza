@@ -1,13 +1,13 @@
 use std::collections::HashMap;
 use dioxus::prelude::*;
-use dioxus::prelude::Router;
 
 use crate::components::{NewOrderDialog, OrderViewComponent, Sidebar};
 use pizza_common::order_state::*;
 use chrono::Utc;
-
 use ed25519_dalek::SigningKey;
 use ed25519_dalek::VerifyingKey;
+use crate::services::{BaseInterface, LocalStorageService};
+use futures::StreamExt;
 
 #[derive(Clone, Routable, Debug, PartialEq)]
 #[rustfmt::skip]
@@ -22,16 +22,6 @@ pub enum Route {
     PageNotFound { route: Vec<String> },
 }
 
-#[component]
-fn OrderPage(id: String) -> Element {
-    let contracts = use_context::<Signal<HashMap<String, Contract>>>();
-    let id_for_memo = id.clone();
-    let contract = use_memo(move || contracts.read().get(&id_for_memo).cloned());
-    rsx! {
-        OrderViewComponent { contract: contract, sk: use_context::<Signal<SigningKey>>(), id: id }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct Contract {
     pub state: FullOrderStateV1,
@@ -39,6 +29,17 @@ pub struct Contract {
     pub sk: Option<SigningKey>,
     pub vk: VerifyingKey,
     pub id: String,
+}
+
+#[component]
+fn OrderPage(id: String) -> Element {
+    let contracts = use_context::<Signal<HashMap<String, Contract>>>();
+    let sk = use_context::<Signal<SigningKey>>();
+    let id_clone = id.clone();
+    let contract = use_memo(move || contracts.read().get(&id_clone).cloned());
+    rsx! {
+        OrderViewComponent { contract: contract, sk: sk, id: id }
+    }
 }
 
 #[component]
@@ -52,10 +53,63 @@ pub fn App() -> Element {
 fn AppContent() -> Element {
     let mut bytes = [0u8; 32];
     rand::Rng::fill(&mut rand::thread_rng(), &mut bytes);
-    let sk = use_signal(|| SigningKey::from_bytes(&bytes));
+    let sk = use_context_provider(|| Signal::new(SigningKey::from_bytes(&bytes)));
 
-    let mut contracts = use_signal(|| HashMap::<String, Contract>::new());
+    let mut contracts = use_context_provider(|| Signal::new(HashMap::<String, Contract>::new()));
     let mut show_new_order = use_signal(|| false);
+
+    use_effect(move || {
+        spawn(async move {
+            if let Ok(base) = LocalStorageService::new() {
+                // Initial load
+                if let Ok(ids) = base.get_contracts() {
+                    let mut loaded_contracts = HashMap::new();
+                    for id in ids {
+                        if let Ok((state, parameters)) = base.get_contract_parameters_and_state(id.clone()) {
+                            let vk = parameters.owner;
+                            loaded_contracts.insert(id.clone(), Contract {
+                                state,
+                                parameters,
+                                sk: None,
+                                vk,
+                                id,
+                            });
+                        }
+                    }
+                    contracts.set(loaded_contracts);
+                }
+
+                // Subscribe to changes
+                let mut stream = base.subscribe_contracts();
+                while let Some(ids) = stream.next().await {
+                    let mut current_contracts = contracts.peek().clone();
+                    let mut changed = false;
+                    
+                    // Remove contracts that are no longer present
+                    current_contracts.retain(|id, _| ids.contains(id));
+                    
+                    for id in ids {
+                        if !current_contracts.contains_key(&id) {
+                            if let Ok((state, parameters)) = base.get_contract_parameters_and_state(id.clone()) {
+                                let vk = parameters.owner;
+                                current_contracts.insert(id.clone(), Contract {
+                                    state,
+                                    parameters,
+                                    sk: None,
+                                    vk,
+                                    id,
+                                });
+                                changed = true;
+                            }
+                        }
+                    }
+                    if changed {
+                        contracts.set(current_contracts);
+                    }
+                }
+            }
+        });
+    });
 
     let route = use_route::<Route>();
     let selected_order_id = match route {
@@ -75,18 +129,7 @@ fn AppContent() -> Element {
                 selected_order_id: selected_order_id
             }
             main {
-                match route {
-                    Route::OrderPage { id: ref_id } => {
-                        let id_for_memo = ref_id.clone();
-                        let contract = use_memo(move || contracts.read().get(&id_for_memo).cloned());
-                        rsx! {
-                            OrderViewComponent { contract, sk: sk, id: ref_id.clone() }
-                        }
-                    },
-                    _ => rsx! {
-                        Outlet::<Route> {}
-                    }
-                }
+                Outlet::<Route> {}
             }
 
             if show_new_order() {
