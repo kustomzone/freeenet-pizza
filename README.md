@@ -2,6 +2,8 @@
 
 A decentralized pizza ordering application built on Freenet. Allows groups to collaboratively create and manage pizza orders with cryptographic verification and eventual consistency across peers.
 
+[ » Live on freenet ](http://localhost:7509/v1/contract/web/HGC7cKPnCuHTeAUftUqKsWiWmYWSmxDNTxY21vK4nqjw/)
+
 ## Features
 
 - Create and manage group pizza orders
