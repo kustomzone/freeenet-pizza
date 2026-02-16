@@ -15,10 +15,11 @@ ed25519-dalek.workspace = true
 chrono.workspace = true
 thiserror.workspace = true
 freenet-scaffold.workspace = true
+rand.workspace = true
+getrandom.workspace = true
 
 
 [dev-dependencies]
-rand.workspace = true
 
 [profile.release]
 lto = true
