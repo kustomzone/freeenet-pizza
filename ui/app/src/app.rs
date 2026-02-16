@@ -156,6 +156,7 @@ fn AppContent() -> Element {
                     on_create: move |name: String| {
                         let base = base_for_dialog.clone();
                         let sk_val = sk_signal.read().clone();
+                        let nav = navigator();
                         let order = AuthorizedOrderV1::new(Order { name, currency: "$".parse().unwrap(), order_version: 1 }, &sk_val);
                         let parameters = OrderParametersV1 {
                             owner: sk_val.verifying_key(),
@@ -177,6 +178,8 @@ fn AppContent() -> Element {
                         spawn(async move {
                             if let Ok(res) = base.publish_contract(contract).await {
                                 show_new_order.set(false);
+                                // Navigate to the newly created order
+                                nav.push(Route::OrderPage { id: res.contract_key });
                             }
                         });
                     },
