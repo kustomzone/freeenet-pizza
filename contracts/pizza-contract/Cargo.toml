@@ -7,16 +7,15 @@ edition.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-pizza-common = { path = "../../common" }
+pizza-common = { path = "../../common", default-features = false }
 freenet-stdlib = { workspace = true, features = ["contract"] }
 serde.workspace = true
 ciborium.workspace = true
-ed25519-dalek.workspace = true
-chrono.workspace = true
+# Contract only needs verification, not signing - no rand needed
+ed25519-dalek = { version = "2.1.1", default-features = false, features = ["alloc"] }
+chrono = { version = "0.4", default-features = false, features = ["serde"] }
 thiserror.workspace = true
 freenet-scaffold.workspace = true
-rand.workspace = true
-getrandom.workspace = true
 
 
 [dev-dependencies]

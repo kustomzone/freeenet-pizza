@@ -3,19 +3,27 @@ name = "pizza-common"
 version.workspace = true
 edition.workspace = true
 
+[features]
+default = ["rand"]
+# Enable random number generation (for UI/delegates, not contracts)
+rand = ["dep:rand", "dep:getrandom", "ed25519-dalek/rand_core"]
+
 [dependencies]
 serde.workspace = true
 ciborium.workspace = true
-ed25519-dalek.workspace = true
-chrono.workspace = true
+# Base ed25519-dalek without rand - contracts only need verification
+ed25519-dalek = { version = "2.1.1", default-features = false, features = ["alloc", "serde"] }
+chrono = { version = "0.4", default-features = false, features = ["serde"] }
 thiserror.workspace = true
 # Internal dependencies
 freenet-scaffold.workspace = true
 freenet-scaffold-macro.workspace = true
 freenet-stdlib.workspace = true
-rand.workspace = true
 base64.workspace = true
 data-encoding.workspace = true
+# Optional dependencies for rand feature
+rand = { workspace = true, optional = true }
+getrandom = { workspace = true, optional = true }
 
 [dev-dependencies]
 serde_json = "1.0"
