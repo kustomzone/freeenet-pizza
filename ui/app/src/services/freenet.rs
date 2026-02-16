@@ -177,16 +177,16 @@ impl BaseInterface for FreenetService {
             // Publish the contract and get a receiver for the response
             let (contract_key, response_rx) = publish_contract_async(&state, &params);
 
-            // Subscribe to updates for this contract
-            if let Some(subscribe_rx) = subscribe_to_contract_async(&contract_key) {
-                // Wait for subscription to be confirmed (with a reasonable timeout)
-                let _ = subscribe_rx.await;
-            }
-
             // Wait for the PUT response
             match response_rx.await {
                 Ok(response) => {
                     if response.success {
+                        // Subscribe to updates for this contract
+                        if let Some(subscribe_rx) = subscribe_to_contract_async(&contract_key) {
+                            // Wait for subscription to be confirmed (with a reasonable timeout)
+                            let _ = subscribe_rx.await;
+                        }
+
                         Ok(PublishContractResponse {
                             contract_key: response.contract_key,
                             state,
