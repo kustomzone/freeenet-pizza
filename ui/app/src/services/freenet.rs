@@ -18,7 +18,7 @@ use super::base::{
     AsyncResult, BaseInterface, Contract, PublishContractResponse, PublishDeltaResponse,
 };
 use crate::api::node_api::{
-    get_contract_keys, get_contract_state, publish_contract_async, send_contract_update_async,
+    get_contract_keys, get_contract_state, publish_contract_async, send_contract_delta_async,
     subscribe_to_contract_async, subscribe_to_contract_list, subscribe_to_contract_updates,
     CONTRACTS,
 };
@@ -97,15 +97,15 @@ impl BaseInterface for FreenetService {
 
     /// Publish a delta update to a contract on the Freenet network.
     ///
-    /// This computes the new state locally, sends an update to the network,
-    /// and waits for acknowledgement.
+    /// This sends the delta directly to the network and waits for acknowledgement.
+    /// The contract on the network will apply the delta to compute the new state.
     fn publish_delta(
         &self,
         id: String,
         delta: FullOrderStateV1Delta,
     ) -> AsyncResult<PublishDeltaResponse> {
         Box::pin(async move {
-            // Get current state and contract key
+            // Get current state and contract key for local optimistic update
             let (current_state, params, contract_key): (
                 FullOrderStateV1,
                 OrderParametersV1,
@@ -118,10 +118,10 @@ impl BaseInterface for FreenetService {
                     .ok_or_else(|| format!("Contract not found: {}", id))?
             };
 
-            // Compute new state by applying delta
+            // Compute new state locally for optimistic update
             let mut new_state: FullOrderStateV1 = current_state.clone();
             new_state
-                .apply_delta(&current_state, &params, &Some(delta))
+                .apply_delta(&current_state, &params, &Some(delta.clone()))
                 .map_err(|e| e.to_string())?;
 
             // Update local state optimistically
@@ -130,9 +130,9 @@ impl BaseInterface for FreenetService {
                 contracts.insert(id.clone(), (new_state.clone(), params.clone(), contract_key));
             }
 
-            // Send update to the network and wait for acknowledgement
-            let response_rx = send_contract_update_async(&id, &new_state)
-                .ok_or_else(|| format!("Failed to send update for contract: {}", id))?;
+            // Send the delta to the network and wait for acknowledgement
+            let response_rx = send_contract_delta_async(&id, &delta)
+                .ok_or_else(|| format!("Failed to send delta for contract: {}", id))?;
 
             // Wait for the response
             match response_rx.await {
@@ -142,7 +142,7 @@ impl BaseInterface for FreenetService {
                 }),
                 Err(_) => {
                     // Channel was cancelled - this can happen if the connection drops
-                    Err("Update request was cancelled (connection lost?)".into())
+                    Err("Delta update request was cancelled (connection lost?)".into())
                 }
             }
         })
