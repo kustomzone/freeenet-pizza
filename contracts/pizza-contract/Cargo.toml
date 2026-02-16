@@ -17,6 +17,12 @@ chrono = { version = "0.4", default-features = false, features = ["serde"] }
 thiserror.workspace = true
 freenet-scaffold.workspace = true
 
+[features]
+default = ["freenet-main-contract"]
+contract = ["freenet-stdlib/contract"]
+freenet-main-contract = []
+trace = ["freenet-stdlib/trace"]
+# Use ed25519-compact for WASM builds to avoid getrandom contamination
 
 [dev-dependencies]
 
