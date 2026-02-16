@@ -10,8 +10,8 @@ use std::process::Command;
 
 fn main() {
     // Tell Cargo to rerun this build script if the contract source changes
-    println!("cargo:rerun-if-changed=../../contracts/pizza-contract/src/lib.rs");
-    println!("cargo:rerun-if-changed=../../common/src/");
+    println!("cargo:rerun-if-changed=../../contracts/pizza-contract/");
+    println!("cargo:rerun-if-changed=../../common/");
 
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let project_root = PathBuf::from(&manifest_dir)

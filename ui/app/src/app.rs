@@ -58,7 +58,7 @@ pub fn App() -> Element {
     use_effect(|| {
         let api_url = NODE_HTTP_BASE.read().clone();
         let auth_token = AUTH_TOKEN.read().clone();
-        let auth_token = if auth_token.is_none() { "" } else { &*(vec!["&authToken=", &*auth_token.unwrap()].join("")) };
+        let auth_token = if auth_token.is_none() { "".into() } else { format!("{}{}", "&authToken=", auth_token.unwrap()) };
         let api_url = api_url.replace("http", "ws") + "/v1/contract/command?encodingProtocol=native" + auth_token;
         connect_node_api(&NodeConfig { api_url });
     });
@@ -176,7 +176,7 @@ fn AppContent() -> Element {
 
                         // Spawn async task to publish the contract
                         spawn(async move {
-                            if let Ok(_) = base.publish_contract(contract).await {
+                            if let Ok(res) = base.publish_contract(contract).await {
                                 show_new_order.set(false);
                             }
                         });
