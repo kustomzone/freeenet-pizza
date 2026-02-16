@@ -1,9 +1,12 @@
 use std::convert::Into;
+use std::{env, fs, io};
 use std::error::Error;
+use std::fs::read_dir;
 use clap::{Parser, Subcommand};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use byteorder::{BigEndian, WriteBytesExt};
+use tar::Builder;
 
 macro_rules! println {
     ($($arg:tt)*) => {
@@ -136,42 +139,133 @@ fn fdev_publish(
         ]))
 }
 
+fn find_public_dir(root: &Path) -> io::Result<Option<PathBuf>> {
+    if !root.is_dir() {
+        return Ok(None);
+    }
+
+    for entry in fs::read_dir(root)? {
+        let entry = entry?;
+        let path = entry.path();
+
+        if path.is_dir() {
+            if path.file_name().map(|n| n == "public").unwrap_or(false) {
+                return Ok(Some(path));
+            }
+
+            if let Some(found) = find_public_dir(&path)? {
+                return Ok(Some(found));
+            }
+        }
+    }
+
+    Ok(None)
+}
+
+fn build_dx_app(
+    contract_wasm: PathBuf,
+    webapp_parameters: PathBuf,
+    package: &str,
+) -> Result<PathBuf, Box<dyn Error>> {
+    println!("Building app...");
+
+    let contract_id = fdev_get_contract_id(
+        contract_wasm,
+        webapp_parameters,
+    )?;
+
+    let temp_dir = env::temp_dir();
+
+    println!("temp {:?}", temp_dir);
+
+    execute(Command::new(cargo_bin_or_path("dx", "dioxus-cli"))
+        .env("CARGO_TARGET_DIR", &temp_dir)
+        .args([
+            "build",
+            "--package",
+            package,
+            "--base-path",
+            format!("/v1/contract/web/{}/", contract_id).as_str(),
+            "--release",
+        ]))?;
+
+    let public_dir = find_public_dir(&temp_dir)?.expect("public path");
+
+    Ok(public_dir)
+}
+
 fn fdev_get_contract_id(
     contract_wasm: PathBuf,
     webapp_parameters: PathBuf,
-) -> Result<(), Box<dyn Error>> {
-    println!("Contract ID:");
-    execute(Command::new(cargo_bin_or_path("fdev", "fdev"))
+) -> Result<String, Box<dyn Error>> {
+    let output = Command::new(cargo_bin_or_path("fdev", "fdev"))
         .args([
             "get-contract-id",
             "--code",
             &contract_wasm.to_string_lossy(),
             "--parameters",
             &webapp_parameters.to_string_lossy(),
-        ]))
+        ])
+        .output()?; // run and capture
+
+    if !output.status.success() {
+        return Err(format!(
+            "Command failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        )
+            .into());
+    }
+
+    let contract_id = String::from_utf8(output.stdout)?.trim().to_string();
+
+    Ok(contract_id)
 }
 
 fn dev() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn deploy(version: u32) -> Result<(), Box<dyn Error>> {
-    cargo_build("pizza-ui")?;
+fn add_dir_to_tar<W: io::Write>(
+    tar: &mut Builder<W>,
+    src_dir: &Path,
+    base: &Path,
+) -> io::Result<()> {
+    for entry in fs::read_dir(src_dir)? {
+        let entry = entry?;
+        let path = entry.path();
 
+        // path inside archive (relative)
+        let archive_path: PathBuf = path.strip_prefix(base).unwrap().into();
+
+        if path.is_dir() {
+            tar.append_dir(&archive_path, &path)?;
+            add_dir_to_tar(tar, &path, base)?;
+        } else if path.is_file() {
+            tar.append_path_with_name(&path, &archive_path)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn deploy(version: u32) -> Result<(), Box<dyn Error>> {
     let contract_wasm = default_storage_path("web.contract.wasm");
     let webapp_archive = default_storage_path("webapp.bootstrap.tar.xz");
+    let webapp_metadata = default_storage_path("webapp.metadata");
+    let webapp_parameters = default_storage_path("webapp.parameters");
+
+    let out = build_dx_app(
+        contract_wasm.clone(),
+        webapp_parameters.clone(),
+        "pizza-ui"
+    )?;
+
     // Create an empty .tar.xz archive
     let file = std::fs::File::create(&webapp_archive)?;
     let enc = xz2::write::XzEncoder::new(file, 6);
     let mut tar = tar::Builder::new(enc);
-    let mut header = tar::Header::new_gnu();
-    let content = b"<tt>wip</tt>";
-    header.set_size(content.len() as u64);
-    header.set_mode(0o644);
-    tar.append_data(&mut header, "index.html", &content[..])?;
+    add_dir_to_tar(&mut tar, &out, &out);
     tar.finish()?;
-    let webapp_metadata = default_storage_path("webapp.metadata");
-    let webapp_parameters = default_storage_path("webapp.parameters");
 
     web_container_sign(
         webapp_archive.clone(),
@@ -243,10 +337,12 @@ fn get_web_contract_id() -> Result<(), Box<dyn Error>> {
     let contract_wasm = default_storage_path("web.contract.wasm");
     let webapp_parameters = default_storage_path("webapp.parameters");
 
-    fdev_get_contract_id(
+    let contract_id = fdev_get_contract_id(
         contract_wasm,
         webapp_parameters,
     )?;
+
+    println!("{}", contract_id);
 
     Ok(())
 }
