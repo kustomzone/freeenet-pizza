@@ -7,6 +7,7 @@ mod app;
 mod services;
 mod api;
 
+use std::rc::Rc;
 use dioxus::prelude::*;
 
 fn main() {
@@ -17,6 +18,10 @@ fn main() {
         let _ = console_log::init_with_level(log::Level::Debug);
     }
 
-    // Launch the Dioxus app
-    launch(app::App);
+    // Launch the Dioxus app with HashHistory for proper routing on Freenet
+    // HashHistory uses URL fragments (#/path) instead of full paths,
+    // which works correctly when served from a Freenet contract
+    dioxus::LaunchBuilder::new()
+        .with_cfg(dioxus::web::Config::new().history(Rc::new(dioxus::web::HashHistory::default())))
+        .launch(app::App);
 }
