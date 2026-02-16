@@ -1,11 +1,18 @@
 use dioxus::prelude::*;
-use crate::services::BaseService;
+use crate::services::{BaseService, Contract};
 use crate::components::YourOrderSection;
 use ed25519_dalek::VerifyingKey;
 use pizza_common::FullOrderStateV1Delta;
 use pizza_common::order_state::{ItemContentV1, Paid, AuthorizedPaidV1};
 use pizza_common::util::format_price;
 use futures::StreamExt;
+
+#[derive(Clone, PartialEq)]
+enum LoadState {
+    Loading,
+    Loaded(Contract),
+    NotFound,
+}
 
 #[component]
 pub fn OrderViewComponent(
@@ -14,18 +21,39 @@ pub fn OrderViewComponent(
     let base = use_context::<BaseService>();
     let sk = base.get_private_key().unwrap();
     let user_vk = base.get_public_key().unwrap();
-    
-    let mut contract = use_signal(|| base.get_contract_parameters_and_state(id.clone()).ok());
 
+    // Start with cached state if available, otherwise loading
+    let initial_state = match base.get_contract_cached(id.clone()) {
+        Some(c) => LoadState::Loaded(c),
+        None => LoadState::Loading,
+    };
+    let mut load_state = use_signal(|| initial_state);
+
+    // Fetch contract asynchronously and subscribe to updates
     use_effect({
         let id = id.clone();
+        let base = base.clone();
         move || {
             let id = id.clone();
+            let base = base.clone();
             spawn(async move {
-                let base = use_context::<BaseService>();
+                // Fetch from network
+                match base.get_contract_async(id.clone()).await {
+                    Ok(contract) => {
+                        load_state.set(LoadState::Loaded(contract));
+                    }
+                    Err(_) => {
+                        // Only set NotFound if we don't have cached data
+                        if matches!(*load_state.read(), LoadState::Loading) {
+                            load_state.set(LoadState::NotFound);
+                        }
+                    }
+                }
+
+                // Subscribe to updates
                 let mut stream = base.subscribe_contract_state(id);
                 while let Some(new_contract) = stream.next().await {
-                    contract.set(Some(new_contract));
+                    load_state.set(LoadState::Loaded(new_contract));
                 }
             });
         }
@@ -33,15 +61,26 @@ pub fn OrderViewComponent(
 
     let mut show_invite_copied = use_signal(|| false);
 
-    let c_opt = contract.read();
-    match c_opt.as_ref() {
-        None => rsx! {
+    let state = load_state.read();
+    match &*state {
+        LoadState::Loading => rsx! {
+            div {
+                class: "empty-state loading-state",
+                div {
+                    class: "loading-spinner",
+                }
+                h3 { "Loading order..." }
+                p { "Fetching contract from Freenet" }
+            }
+        },
+        LoadState::NotFound => rsx! {
             div {
                 class: "empty-state",
                 h3 { "Order not found" }
+                p { "This order may have been deleted or doesn't exist." }
             }
         },
-        Some(c) => {
+        LoadState::Loaded(c) => {
             let order_name = c.state.order.order.name.clone();
             let created_at = c.parameters.created_at.to_rfc3339();
             let is_creator = c.parameters.owner == user_vk;

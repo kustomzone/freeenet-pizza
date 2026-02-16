@@ -7,7 +7,6 @@ use std::error::Error;
 use std::pin::Pin;
 
 use dioxus::prelude::ReadableExt;
-use dioxus::signals::Writable;
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use freenet_stdlib::prelude::ContractKey;
 use futures::Stream;
@@ -18,7 +17,8 @@ use super::base::{
     AsyncResult, BaseInterface, Contract, PublishContractResponse, PublishDeltaResponse,
 };
 use crate::api::node_api::{
-    get_contract_keys, get_contract_state, publish_contract_async, send_contract_delta_async,
+    get_contract_keys, get_contract_state_cached, get_contract_by_key_async,
+    publish_contract_async, send_contract_delta_async,
     subscribe_to_contract_async, subscribe_to_contract_list, subscribe_to_contract_updates,
     CONTRACTS,
 };
@@ -88,11 +88,35 @@ impl BaseInterface for FreenetService {
     }
 
     /// Returns parameters and state for a given contract ID from the local cache.
-    fn get_contract_parameters_and_state(&self, id: String) -> Result<Contract, Box<dyn Error>> {
-        match get_contract_state(&id) {
-            Some((state, parameters)) => Ok(Contract { state, parameters }),
-            None => Err(format!("Contract not found: {}", id).into()),
-        }
+    fn get_contract_cached(&self, id: String) -> Option<Contract> {
+        get_contract_state_cached(&id).map(|(state, parameters)| Contract { state, parameters })
+    }
+
+    /// Fetch contract state from Freenet via GET request.
+    fn get_contract_async(&self, id: String) -> AsyncResult<Contract> {
+        Box::pin(async move {
+            // Check if we have it cached first
+            if let Some((state, params)) = get_contract_state_cached(&id) {
+                // Even if cached, request fresh state from network
+                if let Some(rx) = get_contract_by_key_async(&id) {
+                    match rx.await {
+                        Ok(response) => {
+                            if let Some(state) = response.state {
+                                // Get params from cache (they don't change)
+                                return Ok(Contract { state, parameters: params });
+                            }
+                        }
+                        Err(_) => {
+                            // Channel cancelled, return cached state
+                        }
+                    }
+                }
+                // Return cached state if network request failed
+                return Ok(Contract { state, parameters: params });
+            }
+
+            Err(format!("Contract not found: {}", id).into())
+        })
     }
 
     /// Publish a delta update to a contract on the Freenet network.

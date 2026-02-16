@@ -11,6 +11,8 @@ pub fn Sidebar(
     sk: Signal<SigningKey>,
     on_new_order: EventHandler<()>,
     selected_order_id: Option<String>,
+    #[props(default = false)]
+    loading: bool,
 ) -> Element {
     let user_vk = sk.read().verifying_key();
     let connection_status = CONNECTION_STATUS.read();
@@ -124,7 +126,17 @@ pub fn Sidebar(
                 if contracts.read().is_empty() {
                     div {
                         style: "padding: 20px; text-align: center; color: rgba(255,255,255,0.5);",
-                        "No orders yet"
+                        if loading {
+                            div {
+                                class: "sidebar-loading",
+                                div {
+                                    class: "loading-spinner-small",
+                                }
+                                span { "Loading orders..." }
+                            }
+                        } else {
+                            "No orders yet"
+                        }
                     }
                 }
             }

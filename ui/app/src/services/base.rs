@@ -45,15 +45,18 @@ pub struct PublishDeltaResponse {
 /// - Freenet network (FreenetService)
 /// - Local storage (LocalStorageService) for testing
 pub trait BaseInterface {
-    /// Returns a list of contract IDs/keys.
-    ///
-    /// This is synchronous as it reads from local cache.
+    /// Returns a list of contract IDs/keys from local cache.
     fn get_contracts(&self) -> Result<Vec<String>, Box<dyn Error>>;
 
-    /// Returns parameters and state for a given contract ID.
+    /// Returns parameters and state for a given contract ID from local cache.
+    /// Returns None if contract is not in cache.
+    fn get_contract_cached(&self, id: String) -> Option<Contract>;
+
+    /// Fetch contract state from the network.
     ///
-    /// This is synchronous as it reads from local cache.
-    fn get_contract_parameters_and_state(&self, id: String) -> Result<Contract, Box<dyn Error>>;
+    /// Returns a future that resolves when the state is received from Freenet.
+    /// The contract must already be known (via previous publish or subscription).
+    fn get_contract_async(&self, id: String) -> AsyncResult<Contract>;
 
     /// Publish a delta update to a contract.
     ///

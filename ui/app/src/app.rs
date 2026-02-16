@@ -76,40 +76,46 @@ fn AppContent() -> Element {
 
     let mut contracts = use_context_provider(|| Signal::new(HashMap::<String, Contract>::new()));
     let mut show_new_order = use_signal(|| false);
+    let mut loading = use_signal(|| true);
 
     use_effect(move || {
         let base = base.clone();
         spawn(async move {
-            // Initial load
+            // Initial load from cache
             if let Ok(ids) = base.get_contracts() {
                 let mut loaded_contracts = HashMap::new();
                 for id in ids {
-                    if let Ok(contract) = base.get_contract_parameters_and_state(id.clone()) {
+                    // First try cache
+                    if let Some(contract) = base.get_contract_cached(id.clone()) {
                         let vk = contract.parameters.owner;
                         loaded_contracts.insert(id.clone(), Contract {
                             state: contract.state,
                             parameters: contract.parameters,
                             sk: None,
                             vk,
-                            id,
+                            id: id.clone(),
                         });
                     }
+                    // Then fetch fresh from network (will update via subscription)
+                    let _ = base.get_contract_async(id).await;
                 }
                 contracts.set(loaded_contracts);
             }
+            loading.set(false);
 
             // Subscribe to changes
             let mut stream = base.subscribe_contracts();
             while let Some(ids) = stream.next().await {
                 let mut current_contracts = contracts.peek().clone();
                 let mut changed = false;
-                
+
                 // Remove contracts that are no longer present
                 current_contracts.retain(|id, _| ids.contains(id));
-                
+
                 for id in ids {
                     if !current_contracts.contains_key(&id) {
-                        if let Ok(contract) = base.get_contract_parameters_and_state(id.clone()) {
+                        // Fetch new contract from network
+                        if let Ok(contract) = base.get_contract_async(id.clone()).await {
                             let vk = contract.parameters.owner;
                             current_contracts.insert(id.clone(), Contract {
                                 state: contract.state,
@@ -144,7 +150,8 @@ fn AppContent() -> Element {
                 contracts: contracts,
                 sk: sk_signal,
                 on_new_order: move |_| show_new_order.set(true),
-                selected_order_id: selected_order_id
+                selected_order_id: selected_order_id,
+                loading: loading()
             }
             main {
                 Outlet::<Route> {}

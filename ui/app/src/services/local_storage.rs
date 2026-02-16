@@ -95,24 +95,44 @@ impl BaseInterface for LocalStorageService {
         }
     }
 
-    fn get_contract_parameters_and_state(&self, id: String) -> Result<Contract, Box<dyn Error>> {
+    fn get_contract_cached(&self, id: String) -> Option<Contract> {
         let state_json = self
             .storage
             .get_item(&Self::get_state_key(&id))
-            .map_err(js_to_err)?
-            .ok_or(format!("state not found for {}", id))?;
+            .ok()??;
         let params_json = self
             .storage
             .get_item(&Self::get_params_key(&id))
-            .map_err(js_to_err)?
-            .ok_or(format!("params not found for {}", id))?;
+            .ok()??;
 
-        let state: FullOrderStateV1 = serde_json::from_str(&state_json)?;
-        let params: OrderParametersV1 = serde_json::from_str(&params_json)?;
+        let state: FullOrderStateV1 = serde_json::from_str(&state_json).ok()?;
+        let params: OrderParametersV1 = serde_json::from_str(&params_json).ok()?;
 
-        Ok(Contract {
+        Some(Contract {
             state,
             parameters: params,
+        })
+    }
+
+    fn get_contract_async(&self, id: String) -> AsyncResult<Contract> {
+        let storage = self.storage.clone();
+        Box::pin(async move {
+            let state_json = storage
+                .get_item(&Self::get_state_key(&id))
+                .map_err(js_to_err)?
+                .ok_or(format!("state not found for {}", id))?;
+            let params_json = storage
+                .get_item(&Self::get_params_key(&id))
+                .map_err(js_to_err)?
+                .ok_or(format!("params not found for {}", id))?;
+
+            let state: FullOrderStateV1 = serde_json::from_str(&state_json)?;
+            let params: OrderParametersV1 = serde_json::from_str(&params_json)?;
+
+            Ok(Contract {
+                state,
+                parameters: params,
+            })
         })
     }
 

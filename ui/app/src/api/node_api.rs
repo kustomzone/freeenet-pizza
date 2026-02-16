@@ -813,8 +813,8 @@ pub fn send_contract_delta_async(
 // Synchronous helpers (for reading cached state)
 // ============================================================================
 
-/// Get contract from local state (synchronous, reads from cache)
-pub fn get_contract_state(contract_key: &str) -> Option<(FullOrderStateV1, OrderParametersV1)> {
+/// Get contract from local cache (synchronous, reads from cache only)
+pub fn get_contract_state_cached(contract_key: &str) -> Option<(FullOrderStateV1, OrderParametersV1)> {
     let contracts = CONTRACTS.read();
     contracts
         .get(contract_key)
@@ -827,4 +827,76 @@ pub fn get_contract_state(contract_key: &str) -> Option<(FullOrderStateV1, Order
 pub fn get_contract_keys() -> Vec<String> {
     let contracts = CONTRACTS.read();
     contracts.keys().cloned().collect()
+}
+
+// ============================================================================
+// Async Contract Fetching (from network)
+// ============================================================================
+
+/// Fetch contract state from Freenet via GET request.
+///
+/// This sends a GET request to the network and returns a future that resolves
+/// when the state is received. The state is also cached in CONTRACTS.
+pub fn get_contract_state_async(
+    contract_key_str: &str,
+    params: &OrderParametersV1,
+) -> oneshot::Receiver<GetResponse> {
+    // Compute the actual ContractKey from parameters
+    let params_bytes = to_cbor_vec(params);
+    let code = ContractCode::from(CONTRACT_WASM.to_vec());
+    let params_obj = Parameters::from(params_bytes);
+    let contract_key = ContractKey::from_params_and_code(&params_obj, &code);
+
+    // Store parameters in cache (state will be filled when response arrives)
+    {
+        let mut contracts = CONTRACTS.write();
+        if !contracts.contains_key(contract_key_str) {
+            contracts.insert(
+                contract_key_str.to_string(),
+                (FullOrderStateV1::default(), params.clone(), contract_key.clone()),
+            );
+        }
+    }
+
+    // Register pending request
+    let response_rx = register_pending_get(contract_key_str);
+
+    // Send GET request
+    let request = ClientRequest::ContractOp(ContractRequest::Get {
+        key: contract_key.into(),
+        return_contract_code: false,
+        subscribe: true,
+        blocking_subscribe: false,
+    });
+    send_request_current(&request);
+    info!("Requesting contract state: {}", contract_key_str);
+
+    response_rx
+}
+
+/// Fetch contract state by key string only (for contracts already in cache with params).
+/// Returns None if the contract key is not known.
+pub fn get_contract_by_key_async(contract_key_str: &str) -> Option<oneshot::Receiver<GetResponse>> {
+    let contracts = CONTRACTS.read();
+    if let Some((_, _, contract_key)) = contracts.get(contract_key_str) {
+        let contract_key = contract_key.clone();
+        drop(contracts);
+
+        // Register pending request
+        let response_rx = register_pending_get(contract_key_str);
+
+        // Send GET request
+        let request = ClientRequest::ContractOp(ContractRequest::Get {
+            key: contract_key.into(),
+            return_contract_code: false,
+            subscribe: true,
+            blocking_subscribe: false,
+        });
+        send_request_current(&request);
+        info!("Requesting contract state by key: {}", contract_key_str);
+
+        Some(response_rx)
+    } else {
+        None
+    }
 }
