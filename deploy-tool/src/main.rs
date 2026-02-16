@@ -1,7 +1,6 @@
 use std::convert::Into;
 use std::{env, fs, io};
 use std::error::Error;
-use std::fs::read_dir;
 use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -260,12 +259,14 @@ fn deploy(version: u32) -> Result<(), Box<dyn Error>> {
         "pizza-ui"
     )?;
 
-    // Create an empty .tar.xz archive
+    // Create the tar.xz archive
     let file = std::fs::File::create(&webapp_archive)?;
     let enc = xz2::write::XzEncoder::new(file, 6);
     let mut tar = tar::Builder::new(enc);
-    add_dir_to_tar(&mut tar, &out, &out);
-    tar.finish()?;
+    add_dir_to_tar(&mut tar, &out, &out)?;
+    // IMPORTANT: Must explicitly finish the XZ encoder to ensure all data is written
+    // before the file is read. into_inner() returns the encoder which must be finished.
+    tar.into_inner()?.finish()?;
 
     web_container_sign(
         webapp_archive.clone(),
@@ -310,7 +311,9 @@ fn initial_web_deploy() -> Result<(), Box<dyn Error>> {
     header.set_size(content.len() as u64);
     header.set_mode(0o644);
     tar.append_data(&mut header, "index.html", &content[..])?;
-    tar.finish()?;
+    // IMPORTANT: Must explicitly finish the XZ encoder to ensure all data is written
+    // before the file is read. into_inner() returns the encoder which must be finished.
+    tar.into_inner()?.finish()?;
     let webapp_metadata = default_storage_path("webapp.metadata");
     let webapp_parameters = default_storage_path("webapp.parameters");
 
