@@ -634,11 +634,17 @@ fn handle_update_response(key: ContractKey) {
     PENDING_UPDATE.with(|pending| {
         if let Some(sender) = pending.borrow_mut().remove(&key_str) {
             let _ = sender.send(UpdateResponse {
-                contract_key: key_str,
+                contract_key: key_str.clone(),
                 success: true,
             });
         }
     });
+
+    // Notify subscribers of the confirmed update
+    let contracts = CONTRACTS.read();
+    if let Some((state, params, _)) = contracts.get(&key_str) {
+        notify_contract_update(&key_str, state, params);
+    }
 }
 
 fn handle_update_notification(key: ContractKey, update: UpdateData<'static>) {
