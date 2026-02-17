@@ -288,7 +288,7 @@ fn deploy(version: u32) -> Result<(), Box<dyn Error>> {
         state_path,
     )?;
 
-    fs::write(default_storage_path("version"), version_chosen.to_string())?;
+    fs::write(default_storage_path("version"), (version_chosen + 1).to_string())?;
 
     Ok(())
 }
