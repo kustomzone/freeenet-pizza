@@ -28,7 +28,7 @@ use wasm_bindgen::JsCast;
 use web_sys::{MessageEvent, WebSocket};
 
 /// Contract WASM bytes - embedded at compile time
-const CONTRACT_WASM: &[u8] =
+pub const CONTRACT_WASM: &[u8] =
     include_bytes!("../../../../contracts/pizza-contract/build/pizza_contract.wasm");
 
 // ============================================================================
@@ -662,7 +662,7 @@ fn handle_subscribe_response(key: ContractKey, subscribed: bool) {
 // Contract Operations (Async)
 // ============================================================================
 
-fn to_cbor_vec<T: serde::Serialize>(value: &T) -> Vec<u8> {
+pub fn to_cbor_vec<T: serde::Serialize>(value: &T) -> Vec<u8> {
     let mut bytes = Vec::new();
     into_writer(value, &mut bytes).expect("CBOR serialization failed");
     bytes

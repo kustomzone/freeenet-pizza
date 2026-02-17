@@ -7,11 +7,13 @@ use std::error::Error;
 use std::pin::Pin;
 
 use dioxus::prelude::ReadableExt;
+use dioxus::signals::Writable;
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use freenet_stdlib::prelude::ContractKey;
 use futures::Stream;
 use futures::StreamExt;
 use pizza_common::{ComposableState, FullOrderStateV1, FullOrderStateV1Delta, OrderParametersV1};
+use web_sys::Storage;
 
 use super::base::{
     AsyncResult, BaseInterface, Contract, PublishContractResponse, PublishDeltaResponse,
@@ -25,6 +27,8 @@ use crate::api::node_api::{
 
 /// Private key storage key in browser storage (for key persistence across sessions)
 const PRIVATE_KEY_KEY: &str = "pizza_private_key";
+/// Contract list storage key (stores list of contract key strings)
+const CONTRACT_LIST_KEY: &str = "pizza_contract_keys";
 
 /// FreenetService implements the BaseInterface trait using the Freenet node API.
 ///
@@ -32,12 +36,14 @@ const PRIVATE_KEY_KEY: &str = "pizza_private_key";
 /// - Publishes contracts to the Freenet network via PUT requests
 /// - Subscribes to contract updates via WebSocket notifications
 /// - Sends state updates to the network
-/// - Uses browser storage only for private key persistence (not contract state)
+/// - Uses browser storage for private key and contract key list persistence
 /// - Awaits network acknowledgements for operations
 #[derive(Clone)]
 pub struct FreenetService {
     /// The user's signing key (persisted in browser storage)
     signing_key: SigningKey,
+    /// Browser localStorage handle
+    storage: Storage,
 }
 
 impl FreenetService {
@@ -45,18 +51,19 @@ impl FreenetService {
     ///
     /// This will load the signing key from browser storage or generate a new one.
     pub fn new() -> Result<Self, Box<dyn Error>> {
-        let signing_key = Self::load_or_create_signing_key()?;
-        Ok(Self { signing_key })
-    }
-
-    /// Load the signing key from browser storage or create a new one.
-    fn load_or_create_signing_key() -> Result<SigningKey, Box<dyn Error>> {
         let window = web_sys::window().ok_or("no window")?;
         let storage = window
             .local_storage()
             .map_err(|e| format!("{:?}", e))?
             .ok_or("no local storage")?;
 
+        let signing_key = Self::load_or_create_signing_key(&storage)?;
+
+        Ok(Self { signing_key, storage })
+    }
+
+    /// Load the signing key from browser storage or create a new one.
+    fn load_or_create_signing_key(storage: &Storage) -> Result<SigningKey, Box<dyn Error>> {
         match storage
             .get_item(PRIVATE_KEY_KEY)
             .map_err(|e| format!("{:?}", e))?
@@ -79,12 +86,49 @@ impl FreenetService {
             }
         }
     }
+
+    /// Load contract keys from localStorage.
+    fn load_contract_keys(&self) -> Vec<String> {
+        match self.storage.get_item(CONTRACT_LIST_KEY) {
+            Ok(Some(json)) => serde_json::from_str(&json).unwrap_or_default(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// Save a contract key to localStorage.
+    fn save_contract_key(&self, key: &str) {
+        save_contract_key_static(&self.storage, key);
+    }
+}
+
+/// Static helper to save a contract key to localStorage (for use in async blocks).
+fn save_contract_key_static(storage: &Storage, key: &str) {
+    // Load current list
+    let mut contract_keys: Vec<String> = match storage.get_item(CONTRACT_LIST_KEY) {
+        Ok(Some(json)) => serde_json::from_str(&json).unwrap_or_default(),
+        _ => Vec::new(),
+    };
+
+    // Add new key if not present
+    if !contract_keys.contains(&key.to_string()) {
+        contract_keys.push(key.to_string());
+        if let Ok(json) = serde_json::to_string(&contract_keys) {
+            let _ = storage.set_item(CONTRACT_LIST_KEY, &json);
+        }
+    }
 }
 
 impl BaseInterface for FreenetService {
-    /// Returns a list of contract IDs (keys) from the local cache.
+    /// Returns a list of contract IDs (keys) from localStorage and local cache.
     fn get_contracts(&self) -> Result<Vec<String>, Box<dyn Error>> {
-        Ok(get_contract_keys())
+        // Merge keys from localStorage with in-memory cache
+        let mut keys = self.load_contract_keys();
+        for key in get_contract_keys() {
+            if !keys.contains(&key) {
+                keys.push(key);
+            }
+        }
+        Ok(keys)
     }
 
     /// Returns parameters and state for a given contract ID from the local cache.
@@ -196,6 +240,7 @@ impl BaseInterface for FreenetService {
     fn publish_contract(&self, contract: Contract) -> AsyncResult<PublishContractResponse> {
         let state = contract.state;
         let params = contract.parameters;
+        let storage = self.storage.clone();
 
         Box::pin(async move {
             // Publish the contract and get a receiver for the response
@@ -205,6 +250,9 @@ impl BaseInterface for FreenetService {
             match response_rx.await {
                 Ok(response) => {
                     if response.success {
+                        // Save contract key to localStorage
+                        save_contract_key_static(&storage, &response.contract_key);
+
                         // Subscribe to updates for this contract
                         if let Some(subscribe_rx) = subscribe_to_contract_async(&contract_key) {
                             // Wait for subscription to be confirmed (with a reasonable timeout)
