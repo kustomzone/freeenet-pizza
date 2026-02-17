@@ -559,11 +559,14 @@ fn handle_get_response(key: ContractKey, contract: Option<ContractContainer>, st
     }
 
     match from_reader::<FullOrderStateV1, &[u8]>(state_bytes) {
-        Ok(order_state) => {
+        Ok(network_state) => {
             let mut contracts = CONTRACTS.write();
 
-            // Try to get existing params, or extract from contract container
-            let params_opt: Option<OrderParametersV1> = if let Some((_, params, _)) = contracts.get(&key_str) {
+            // Try to get existing state and params
+            let existing = contracts.get(&key_str).cloned();
+
+            // Get params from existing state or extract from contract container
+            let params_opt: Option<OrderParametersV1> = if let Some((_, params, _)) = &existing {
                 Some(params.clone())
             } else if let Some(ref container) = contract {
                 // Extract parameters from the contract container
@@ -575,14 +578,35 @@ fn handle_get_response(key: ContractKey, contract: Option<ContractContainer>, st
             };
 
             if let Some(params) = params_opt {
-                let is_new = !contracts.contains_key(&key_str);
+                let is_new = existing.is_none();
+
+                // If we have existing state, merge instead of overwrite
+                // This preserves optimistic updates that haven't propagated to the network yet
+                let final_state = if let Some((current_state, _, _)) = &existing {
+                    let mut merged = current_state.clone();
+                    if let Err(e) = pizza_common::ComposableState::merge(
+                        &mut merged,
+                        current_state,
+                        &params,
+                        &network_state,
+                    ) {
+                        error!("Failed to merge state in GetResponse: {}", e);
+                        // Fall back to network state on merge error
+                        network_state.clone()
+                    } else {
+                        merged
+                    }
+                } else {
+                    network_state.clone()
+                };
+
                 contracts.insert(
                     key_str.clone(),
-                    (order_state.clone(), params.clone(), key.clone()),
+                    (final_state.clone(), params.clone(), key.clone()),
                 );
                 drop(contracts);
 
-                notify_contract_update(&key_str, &order_state, &params);
+                notify_contract_update(&key_str, &final_state, &params);
 
                 // If this is a new contract, notify contract list change
                 if is_new {
@@ -596,7 +620,7 @@ fn handle_get_response(key: ContractKey, contract: Option<ContractContainer>, st
                     if let Some(sender) = pending.borrow_mut().remove(&key_str) {
                         let _ = sender.send(GetResponse {
                             contract_key: key_str.clone(),
-                            state: Some(order_state),
+                            state: Some(final_state),
                         });
                     }
                 });
