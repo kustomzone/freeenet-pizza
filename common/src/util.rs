@@ -36,29 +36,28 @@ pub fn validate_currency(code: &str) -> Result<&'static iso::Currency, String> {
     iso::find(code).ok_or_else(|| format!("Invalid ISO 4217 currency code: {}", code))
 }
 
-/// Common ISO 4217 currency codes for UI selection.
-/// Each entry is (code, name, symbol).
-pub const COMMON_CURRENCIES: &[(&str, &str, &str)] = &[
-    ("USD", "US Dollar", "$"),
-    ("EUR", "Euro", "€"),
-    ("GBP", "British Pound", "£"),
-    ("JPY", "Japanese Yen", "¥"),
-    ("CHF", "Swiss Franc", "Fr"),
-    ("CAD", "Canadian Dollar", "CA$"),
-    ("AUD", "Australian Dollar", "A$"),
-    ("CNY", "Chinese Yuan", "¥"),
-    ("INR", "Indian Rupee", "₹"),
-    ("MXN", "Mexican Peso", "MX$"),
-    ("BRL", "Brazilian Real", "R$"),
-    ("KRW", "South Korean Won", "₩"),
-    ("SGD", "Singapore Dollar", "S$"),
-    ("HKD", "Hong Kong Dollar", "HK$"),
-    ("NOK", "Norwegian Krone", "kr"),
-    ("SEK", "Swedish Krona", "kr"),
-    ("DKK", "Danish Krone", "kr"),
-    ("NZD", "New Zealand Dollar", "NZ$"),
-    ("ZAR", "South African Rand", "R"),
-    ("PLN", "Polish Zloty", "zł"),
+/// Common ISO 4217 currencies for UI selection.
+pub const COMMON_CURRENCIES: &[&iso::Currency] = &[
+    iso::USD,
+    iso::EUR,
+    iso::GBP,
+    iso::JPY,
+    iso::CHF,
+    iso::CAD,
+    iso::AUD,
+    iso::CNY,
+    iso::INR,
+    iso::MXN,
+    iso::BRL,
+    iso::KRW,
+    iso::SGD,
+    iso::HKD,
+    iso::NOK,
+    iso::SEK,
+    iso::DKK,
+    iso::NZD,
+    iso::ZAR,
+    iso::PLN,
 ];
 
 /// Formats a price in the smallest currency unit (e.g., cents) using the specified ISO currency.

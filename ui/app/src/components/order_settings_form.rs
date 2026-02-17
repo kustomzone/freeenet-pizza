@@ -58,11 +58,11 @@ pub fn OrderSettingsForm(
                     select {
                         value: "{currency}",
                         onchange: move |e| currency.set(e.value()),
-                        for (code, name, symbol) in COMMON_CURRENCIES.iter() {
+                        for curr in COMMON_CURRENCIES.iter() {
                             option {
-                                value: "{code}",
-                                selected: *code == currency.read().as_str(),
-                                "{symbol} {code} - {name}"
+                                value: "{curr.iso_alpha_code}",
+                                selected: curr.iso_alpha_code == currency.read().as_str(),
+                                "{curr.symbol} {curr.iso_alpha_code} - {curr.name}"
                             }
                         }
                     }
