@@ -85,8 +85,7 @@ fn AppContent() -> Element {
             if let Ok(ids) = base.get_contracts() {
                 let mut loaded_contracts = HashMap::new();
                 for id in ids.iter() {
-                    // First try cache (for contracts already in memory)
-                    if let Some(contract) = base.get_contract_cached(id.clone()) {
+                    if let Ok(contract) = base.get_contract(id.clone()).await {
                         let vk = contract.parameters.owner;
                         loaded_contracts.insert(id.clone(), Contract {
                             state: contract.state,
@@ -95,18 +94,6 @@ fn AppContent() -> Element {
                             vk,
                             id: id.clone(),
                         });
-                    } else {
-                        // Not in cache - fetch from network (this is the case on app startup)
-                        if let Ok(contract) = base.get_contract_async(id.clone()).await {
-                            let vk = contract.parameters.owner;
-                            loaded_contracts.insert(id.clone(), Contract {
-                                state: contract.state,
-                                parameters: contract.parameters,
-                                sk: None,
-                                vk,
-                                id: id.clone(),
-                            });
-                        }
                     }
                 }
                 contracts.set(loaded_contracts);
@@ -141,8 +128,8 @@ fn AppContent() -> Element {
 
                 for id in ids {
                     if !current_contracts.contains_key(&id) {
-                        // Fetch new contract from network
-                        if let Ok(contract) = base.get_contract_async(id.clone()).await {
+                        // Fetch new contract (tries cache first, then network)
+                        if let Ok(contract) = base.get_contract(id.clone()).await {
                             let vk = contract.parameters.owner;
                             current_contracts.insert(id.clone(), Contract {
                                 state: contract.state,

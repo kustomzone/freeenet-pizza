@@ -101,3 +101,18 @@ impl std::ops::Deref for BaseService {
         &*self.0
     }
 }
+
+impl BaseService {
+    /// Get a contract, trying the cache first, then fetching from network.
+    ///
+    /// This is a convenience method that combines `get_contract_cached` and
+    /// `get_contract_async` into a single async call.
+    pub async fn get_contract(&self, id: String) -> Result<Contract, Box<dyn Error>> {
+        // Try cache first
+        if let Some(contract) = self.get_contract_cached(id.clone()) {
+            return Ok(contract);
+        }
+        // Fall back to network fetch
+        self.get_contract_async(id).await
+    }
+}

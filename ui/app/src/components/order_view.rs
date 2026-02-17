@@ -29,7 +29,7 @@ pub fn OrderViewComponent(
     };
     let mut load_state = use_signal(|| initial_state);
 
-    // Fetch contract asynchronously and subscribe to updates
+    // Fetch contract and subscribe to updates
     use_effect({
         let id = id.clone();
         let base = base.clone();
@@ -37,8 +37,8 @@ pub fn OrderViewComponent(
             let id = id.clone();
             let base = base.clone();
             spawn(async move {
-                // Fetch from network
-                match base.get_contract_async(id.clone()).await {
+                // Fetch contract (tries cache first, then network)
+                match base.get_contract(id.clone()).await {
                     Ok(contract) => {
                         load_state.set(LoadState::Loaded(contract));
                     }
