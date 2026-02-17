@@ -88,15 +88,15 @@ pub fn Sidebar(
                 class: "sidebar-content",
                 ul {
                     class: "order-list",
-                    for contract in contracts.read().values() {
+                    for (id, contract) in contracts.read().iter() {
                         {
-                            let order_id = contract.id.clone();
+                            let order_id = id.clone();
                             let is_active = selected_order_id.as_ref() == Some(&order_id);
                             let is_admin = contract.parameters.owner == user_vk;
 
                             let total_cents = contract.state.items.items.iter().filter_map(|ai| {
                                 match &ai.item.content {
-                                    ItemContentV1::Item { price_cents, .. } => Some(*price_cents),
+                                    ItemContentV1::Item { price_cents, .. } => Some(price_cents),
                                     _ => None,
                                 }
                             }).sum::<u64>();
@@ -105,7 +105,7 @@ pub fn Sidebar(
                                 match &ai.item.content {
                                     ItemContentV1::Item { price_cents, .. } => {
                                         let paid = contract.state.paid.paid.values.get(&ai.item.signed_by).copied().unwrap_or(false);
-                                        if paid { Some(*price_cents) } else { None }
+                                        if paid { Some(price_cents) } else { None }
                                     }
                                     _ => None,
                                 }

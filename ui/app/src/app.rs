@@ -4,7 +4,7 @@ use dioxus::prelude::*;
 use crate::components::{NewOrderDialog, OrderViewComponent, Sidebar};
 use pizza_common::order_state::*;
 use chrono::Utc;
-use crate::services::{FreenetService, BaseService, Contract};
+pub(crate) use crate::services::{FreenetService, BaseService, Contract};
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use futures::StreamExt;
 use crate::api::{get_auth_token_from_window, NodeConfig, connect_node_api, NODE_HTTP_BASE, AUTH_TOKEN};
