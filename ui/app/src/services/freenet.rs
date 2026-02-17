@@ -199,6 +199,10 @@ impl BaseInterface for FreenetService {
                             if let Some((_, params)) = get_contract_state_cached(&id) {
                                 // Save to localStorage for future sessions
                                 save_contract_key_static(&storage, &id, &params);
+
+                                // Subscribe to updates for this newly fetched contract
+                                let _ = subscribe_to_contract_async(&id);
+
                                 return Ok(Contract { state, parameters: params });
                             }
                         }
