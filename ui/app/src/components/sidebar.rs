@@ -16,6 +16,7 @@ pub fn Sidebar(
 ) -> Element {
     let user_vk = sk.read().verifying_key();
     let connection_status = CONNECTION_STATUS.read();
+    let mut sidebar_open = use_signal(|| false);
 
     let status_indicator = match &*connection_status {
         ConnectionStatus::Connected => rsx! {
@@ -49,8 +50,25 @@ pub fn Sidebar(
     };
 
     rsx! {
+        // Hamburger button for mobile
+        button {
+            class: "hamburger-btn",
+            onclick: move |_| sidebar_open.set(!sidebar_open()),
+            span { class: "hamburger-line" }
+            span { class: "hamburger-line" }
+            span { class: "hamburger-line" }
+        }
+
+        // Overlay for mobile when sidebar is open
+        if sidebar_open() {
+            div {
+                class: "sidebar-overlay",
+                onclick: move |_| sidebar_open.set(false),
+            }
+        }
+
         aside {
-            class: "sidebar",
+            class: if sidebar_open() { "sidebar sidebar-open" } else { "sidebar" },
             div {
                 class: "sidebar-header",
                 h1 {
@@ -92,6 +110,7 @@ pub fn Sidebar(
                             rsx! {
                                 Link {
                                     to: Route::OrderPage { id: order_id },
+                                    onclick: move |_| sidebar_open.set(false),
                                     li {
                                         class: if is_active { "order-item active" } else { "order-item" },
                                         div {
