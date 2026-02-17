@@ -115,19 +115,25 @@ pub fn OrderViewComponent(
                 let id = id.clone();
                 let base = use_context::<BaseService>();
                 let sk = sk.clone();
-                let c = c.clone();
+                let owner_vk = c.parameters.owner;
                 move |target_user: VerifyingKey, is_paid: bool| {
                     let owner_sk = sk.clone();
                     // Verify caller is owner
-                    if owner_sk.verifying_key() != c.parameters.owner {
+                    if owner_sk.verifying_key() != owner_vk {
                         return;
                     }
 
-                    let mut paid_map = c.state.paid.paid.values.clone();
+                    // Get current state from cache to avoid stale data
+                    let current_state = match base.get_contract_cached(id.clone()) {
+                        Some(contract) => contract,
+                        None => return,
+                    };
+
+                    let mut paid_map = current_state.state.paid.paid.values.clone();
                     paid_map.insert(target_user, is_paid);
                     let new_paid = Paid {
                         values: paid_map,
-                        paid_version: c.state.paid.paid.paid_version + 1,
+                        paid_version: current_state.state.paid.paid.paid_version + 1,
                     };
                     let delta: FullOrderStateV1Delta = FullOrderStateV1Delta {
                         order: None,
