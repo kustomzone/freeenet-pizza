@@ -161,11 +161,21 @@ fn register_pending_subscribe(contract_key: &str) -> oneshot::Receiver<Subscribe
 // Stream Subscriptions
 // ============================================================================
 
-/// Subscribe to updates for a specific contract
+/// Subscribe to updates for a specific contract.
+/// Immediately emits the current state if available, then emits on changes.
 pub fn subscribe_to_contract_updates(
     contract_key: &str,
 ) -> UnboundedReceiver<(FullOrderStateV1, OrderParametersV1)> {
     let (tx, rx) = unbounded();
+
+    // Emit current state immediately if available
+    {
+        let contracts = CONTRACTS.read();
+        if let Some((state, params, _)) = contracts.get(contract_key) {
+            let _ = tx.unbounded_send((state.clone(), params.clone()));
+        }
+    }
+
     CONTRACT_UPDATE_SENDERS.with(|senders| {
         let mut senders = senders.borrow_mut();
         senders
@@ -176,9 +186,18 @@ pub fn subscribe_to_contract_updates(
     rx
 }
 
-/// Subscribe to contract list changes
+/// Subscribe to contract list changes.
+/// Immediately emits the current contract list, then emits on changes.
 pub fn subscribe_to_contract_list() -> UnboundedReceiver<Vec<String>> {
     let (tx, rx) = unbounded();
+
+    // Emit current contract list immediately
+    let current_keys: Vec<String> = {
+        let contracts = CONTRACTS.read();
+        contracts.keys().cloned().collect()
+    };
+    let _ = tx.unbounded_send(current_keys);
+
     CONTRACT_LIST_SENDERS.with(|senders| {
         senders.borrow_mut().push(tx);
     });
