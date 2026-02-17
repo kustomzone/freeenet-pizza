@@ -4,7 +4,7 @@ use dioxus::prelude::*;
 use crate::components::{NewOrderDialog, OrderViewComponent, Sidebar};
 use pizza_common::order_state::*;
 use chrono::Utc;
-use crate::services::{FreenetService, BaseService};
+use crate::services::{FreenetService, BaseService, Contract};
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use futures::StreamExt;
 use crate::api::{get_auth_token_from_window, NodeConfig, connect_node_api, NODE_HTTP_BASE, AUTH_TOKEN};
@@ -21,25 +21,6 @@ pub enum Route {
     #[route("/not-found/:..route")]
     PageNotFound { route: Vec<String> },
 }
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct Contract {
-    pub state: FullOrderStateV1,
-    pub parameters: OrderParametersV1,
-    pub sk: Option<SigningKey>,
-    pub vk: VerifyingKey,
-    pub id: String,
-}
-
-impl From<Contract> for crate::services::Contract {
-    fn from(c: Contract) -> Self {
-        Self {
-            state: c.state,
-            parameters: c.parameters,
-        }
-    }
-}
-
 #[component]
 fn OrderPage(id: String) -> Element {
     rsx! {
@@ -90,9 +71,6 @@ fn AppContent() -> Element {
                         loaded_contracts.insert(id.clone(), Contract {
                             state: contract.state,
                             parameters: contract.parameters,
-                            sk: None,
-                            vk,
-                            id: id.clone(),
                         });
                     }
                 }
@@ -134,9 +112,6 @@ fn AppContent() -> Element {
                             current_contracts.insert(id.clone(), Contract {
                                 state: contract.state,
                                 parameters: contract.parameters,
-                                sk: None,
-                                vk,
-                                id: id.clone(),
                             });
                             changed = true;
 

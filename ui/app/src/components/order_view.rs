@@ -295,7 +295,7 @@ pub fn OrderViewComponent(
                                                                 if owner_sign {
                                                                     span {
                                                                         style: "margin-left: 8px; font-size: 0.8em; color: var(--primary-color);",
-                                                                        "(admin)"
+                                                                        "(admin edited)"
                                                                     }
                                                                 }
                                                             }
