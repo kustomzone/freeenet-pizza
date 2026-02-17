@@ -7,16 +7,16 @@ pub fn AboutPage() -> Element {
             class: "about-page",
             div {
                 class: "about-header",
-                h1 { "About Group Order" }
+                h1 { "About Pizza Order Manager" }
             }
 
             div {
                 class: "about-content",
                 section {
                     class: "about-section",
-                    h2 { "What is Group Order?" }
+                    h2 { "What is Pizza Order Manager?" }
                     p {
-                        "Group Order is a decentralized application for coordinating group purchases. "
+                        "Pizza Order Manager is a decentralized application for coordinating group purchases. "
                         "While we use pizza as our example (because who doesn't love pizza?), this app "
                         "works for any kind of group order - whether you're organizing lunch for the office, "
                         "collecting coffee orders, arranging a group gift, or coordinating any shared purchase."

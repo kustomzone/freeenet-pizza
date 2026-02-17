@@ -188,6 +188,10 @@ main {
     padding: 0; /* Remove padding here, it's in content-body */
 }
 
+main:has(.about-page) {
+    overflow: scroll;
+}
+
 .content-header {
     padding: 20px 30px;
     background-color: var(--card-bg);
