@@ -84,7 +84,7 @@ fn AppContent() -> Element {
             // Initial load from localStorage keys
             if let Ok(ids) = base.get_contracts() {
                 let mut loaded_contracts = HashMap::new();
-                for id in ids {
+                for id in ids.iter() {
                     // First try cache (for contracts already in memory)
                     if let Some(contract) = base.get_contract_cached(id.clone()) {
                         let vk = contract.parameters.owner;
@@ -110,10 +110,27 @@ fn AppContent() -> Element {
                     }
                 }
                 contracts.set(loaded_contracts);
+
+                // Subscribe to state updates for each contract
+                for id in ids {
+                    let base = base.clone();
+                    let id_clone = id.clone();
+                    spawn(async move {
+                        let mut stream = base.subscribe_contract_state(id_clone.clone());
+                        while let Some(updated) = stream.next().await {
+                            let mut current = contracts.peek().clone();
+                            if let Some(existing) = current.get_mut(&id_clone) {
+                                existing.state = updated.state;
+                                existing.parameters = updated.parameters;
+                                contracts.set(current);
+                            }
+                        }
+                    });
+                }
             }
             loading.set(false);
 
-            // Subscribe to changes
+            // Subscribe to contract list changes
             let mut stream = base.subscribe_contracts();
             while let Some(ids) = stream.next().await {
                 let mut current_contracts = contracts.peek().clone();
@@ -132,9 +149,24 @@ fn AppContent() -> Element {
                                 parameters: contract.parameters,
                                 sk: None,
                                 vk,
-                                id,
+                                id: id.clone(),
                             });
                             changed = true;
+
+                            // Subscribe to state updates for the new contract
+                            let base = base.clone();
+                            let id_clone = id.clone();
+                            spawn(async move {
+                                let mut stream = base.subscribe_contract_state(id_clone.clone());
+                                while let Some(updated) = stream.next().await {
+                                    let mut current = contracts.peek().clone();
+                                    if let Some(existing) = current.get_mut(&id_clone) {
+                                        existing.state = updated.state;
+                                        existing.parameters = updated.parameters;
+                                        contracts.set(current);
+                                    }
+                                }
+                            });
                         }
                     }
                 }
