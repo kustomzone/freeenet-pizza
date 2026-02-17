@@ -3,7 +3,7 @@ use ed25519_dalek::{SigningKey, VerifyingKey};
 use log::info;
 use pizza_common::FullOrderStateV1Delta;
 use pizza_common::order_state::{ItemContentV1, ItemV1, AuthorizedItemV1};
-use pizza_common::util::{format_price, parse_price};
+use pizza_common::util::{format_price_with_currency, parse_price};
 use crate::services::BaseService;
 
 #[derive(Clone, PartialEq)]
@@ -22,6 +22,7 @@ pub fn AdminOrderModal(
     contract_id: String,
     owner_sk: SigningKey,
     mode: AdminOrderMode,
+    currency: String,
     on_close: EventHandler<()>,
 ) -> Element {
     let base = use_context::<BaseService>();
@@ -29,7 +30,7 @@ pub fn AdminOrderModal(
     let (is_edit, initial_name, initial_order, initial_price) = match &mode {
         AdminOrderMode::Add => (false, String::new(), String::new(), String::new()),
         AdminOrderMode::Edit { initial_name, initial_order, initial_price, .. } => {
-            (true, initial_name.clone(), initial_order.clone(), format_price(*initial_price))
+            (true, initial_name.clone(), initial_order.clone(), format_price_with_currency(*initial_price, &currency))
         }
     };
 

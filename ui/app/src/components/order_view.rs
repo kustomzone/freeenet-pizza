@@ -4,7 +4,7 @@ use crate::components::{YourOrderSection, AdminOrderModal, AdminOrderMode};
 use ed25519_dalek::VerifyingKey;
 use pizza_common::FullOrderStateV1Delta;
 use pizza_common::order_state::{ItemContentV1, ItemV1, AuthorizedItemV1, Paid, AuthorizedPaidV1};
-use pizza_common::util::format_price;
+use pizza_common::util::format_price_with_currency;
 use futures::StreamExt;
 
 #[derive(Clone, PartialEq)]
@@ -92,6 +92,7 @@ pub fn OrderViewComponent(
         },
         LoadState::Loaded(c) => {
             let order_name = c.state.order.order.name.clone();
+            let currency = c.state.order.order.currency.clone();
             let created_at = c.parameters.created_at.to_rfc3339();
             let is_creator = c.parameters.owner == user_vk;
 
@@ -212,12 +213,12 @@ pub fn OrderViewComponent(
                         div {
                             class: "summary-row",
                             span { "Paid" }
-                            span { "{format_price(paid_cents)} / {format_price(total_cents)}" }
+                            span { "{format_price_with_currency(paid_cents, &currency)} / {format_price_with_currency(total_cents, &currency)}" }
                         }
                         div {
                             class: "summary-row total",
                             span { "Outstanding" }
-                            span { "{format_price(total_cents - paid_cents)}" }
+                            span { "{format_price_with_currency(total_cents - paid_cents, &currency)}" }
                         }
                     }
 
@@ -302,7 +303,7 @@ pub fn OrderViewComponent(
                                                             td { "{ord}" }
                                                             td {
                                                                 class: "price-cell",
-                                                                "{format_price(price_cents)}"
+                                                                "{format_price_with_currency(price_cents, &currency)}"
                                                             }
                                                             td {
                                                                 class: "checkbox-cell",
@@ -399,6 +400,7 @@ pub fn OrderViewComponent(
                                     contract_id: admin_id.clone(),
                                     owner_sk: admin_sk.clone(),
                                     mode: mode,
+                                    currency: currency.clone(),
                                     on_close: move |_| {
                                         admin_modal_mode.set(None);
                                         // Refresh state after modal closes to ensure we have latest data

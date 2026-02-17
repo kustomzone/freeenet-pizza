@@ -188,7 +188,7 @@ fn AppContent() -> Element {
                         let base = base_for_dialog.clone();
                         let sk_val = sk_signal.read().clone();
                         let nav = navigator();
-                        let order = AuthorizedOrderV1::new(Order { name, currency: "$".parse().unwrap(), order_version: 1 }, &sk_val);
+                        let order = AuthorizedOrderV1::new(Order { name, currency: "USD".to_string(), order_version: 1 }, &sk_val);
                         let parameters = OrderParametersV1 {
                             owner: sk_val.verifying_key(),
                             created_at: Utc::now(),

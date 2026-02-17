@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 pizza-common = { path = "../../common" }
+rusty-money.workspace = true
 freenet-stdlib = { workspace = true, features = ["net"] }
 
 # UI Framework

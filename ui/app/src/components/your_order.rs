@@ -3,7 +3,7 @@ use crate::services::{BaseService, Contract};
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use pizza_common::FullOrderStateV1Delta;
 use pizza_common::order_state::{ItemContentV1, ItemV1, AuthorizedItemV1};
-use pizza_common::util::{format_price, parse_price};
+use pizza_common::util::{format_price_with_currency, parse_price};
 
 #[component]
 pub fn YourOrderSection(
@@ -13,7 +13,8 @@ pub fn YourOrderSection(
     sk: SigningKey,
 ) -> Element {
     let base = use_context::<BaseService>();
-    
+    let currency = contract.state.order.order.currency.clone();
+
     // Form signals
     let mut display_name = use_signal(String::new);
     let mut order_text = use_signal(String::new);
@@ -274,7 +275,7 @@ pub fn YourOrderSection(
                                     }
                                     p {
                                         style: "color: var(--text-muted);",
-                                        "Price: {format_price(item.2)}"
+                                        "Price: {format_price_with_currency(item.2, &currency)}"
                                         if is_paid {
                                             span {
                                                 class: "status-badge paid",
@@ -291,7 +292,7 @@ pub fn YourOrderSection(
                                         onclick: move |_| {
                                             display_name.set(item.0.clone());
                                             order_text.set(item.1.clone());
-                                            price_input.set(format_price(item.2));
+                                            price_input.set(format_price_with_currency(item.2, &currency));
                                             price_error.set(None);
                                             edit_mode.set(true);
                                         },

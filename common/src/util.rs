@@ -1,6 +1,7 @@
 use base64::{engine::general_purpose, Engine as _};
 use data_encoding::BASE32;
 use ed25519_dalek::{Signature, SignatureError, Signer, SigningKey, Verifier, VerifyingKey};
+use rusty_money::iso;
 use serde::Serialize;
 
 pub fn sign_struct<T: Serialize>(message: T, signing_key: &SigningKey) -> Signature {
@@ -29,10 +30,33 @@ pub fn truncated_base32(bytes: &[u8]) -> String {
     encoded.chars().take(8).collect()
 }
 
+/// Validates that a currency code is a valid ISO 4217 currency code.
+/// Returns the currency if valid, or an error message if invalid.
+pub fn validate_currency(code: &str) -> Result<&'static iso::Currency, String> {
+    iso::find(code).ok_or_else(|| format!("Invalid ISO 4217 currency code: {}", code))
+}
+
+/// Formats a price in the smallest currency unit (e.g., cents) using the specified ISO currency.
+/// Falls back to USD formatting if the currency code is invalid.
+pub fn format_price_with_currency(minor_units: u64, currency_code: &str) -> String {
+    let currency = iso::find(currency_code).unwrap_or(iso::USD);
+    let exponent = currency.exponent as u32;
+    let divisor = 10u64.pow(exponent);
+    let major = minor_units / divisor;
+    let minor = minor_units % divisor;
+
+    // Format with currency symbol
+    let symbol = currency.symbol;
+    if exponent > 0 {
+        format!("{}{}.{:0width$}", symbol, major, minor, width = exponent as usize)
+    } else {
+        format!("{}{}", symbol, major)
+    }
+}
+
+/// Formats a price in cents as USD (legacy function for backwards compatibility).
 pub fn format_price(cents: u64) -> String {
-    let dollars = cents / 100;
-    let cents_part = cents % 100;
-    format!("${}.{:02}", dollars, cents_part)
+    format_price_with_currency(cents, "USD")
 }
 
 pub fn parse_price(input: &str) -> Result<u64, String> {

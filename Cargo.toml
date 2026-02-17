@@ -19,6 +19,7 @@ edition = "2021"
 serde = { version = "1", features = ["derive"] }
 ciborium = "0.2"
 byteorder = "1"
+rusty-money = "0.5"
 
 # Cryptography
 ed25519-dalek = { version = "2.1.1", default-features = false, features = ["alloc", "serde"] }

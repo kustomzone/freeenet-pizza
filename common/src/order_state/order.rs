@@ -1,4 +1,4 @@
-use crate::util::truncated_base64;
+use crate::util::{truncated_base64, validate_currency};
 use crate::FullOrderStateV1;
 use ed25519_dalek::{Signature, SignatureError, Signer, SigningKey, Verifier, VerifyingKey};
 use freenet_scaffold::util::{fast_hash, FastHash};
@@ -81,9 +81,8 @@ impl ComposableState for AuthorizedOrderV1 {
                 ));
             }
 
-            if delta.order.currency.len() == 0 || delta.order.currency.len() > 3 {
-                return Err(format!("Currency can be 1-3 chars, but is {} chars", delta.order.currency.len()))
-            }
+            // Validate currency is a valid ISO 4217 code
+            validate_currency(&delta.order.currency)?;
 
             // If all checks pass, apply the delta
             self.order = delta.order.clone();
@@ -142,8 +141,8 @@ impl Default for AuthorizedOrderV1 {
 impl Default for Order {
     fn default() -> Self {
         Order {
-            name: "".parse().unwrap(),
-            currency: "$".parse().unwrap(),
+            name: String::new(),
+            currency: "USD".to_string(),
             order_version: 0,
         }
     }
