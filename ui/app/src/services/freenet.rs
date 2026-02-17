@@ -310,11 +310,17 @@ impl BaseInterface for FreenetService {
                         // Save contract key and params to localStorage
                         save_contract_key_static(&storage, &response.contract_key, &params);
 
-                        // Subscribe to updates for this contract
+                        // Subscribe to network updates for this contract
                         if let Some(subscribe_rx) = subscribe_to_contract_async(&contract_key) {
                             // Wait for subscription to be confirmed (with a reasonable timeout)
                             let _ = subscribe_rx.await;
                         }
+
+                        // Notify any existing state subscribers of the initial state
+                        notify_contract_update(&response.contract_key, &state, &params);
+
+                        // Subscribe to updates for this newly fetched contract
+                        let _ = subscribe_to_contract_async(&contract_key);
 
                         Ok(PublishContractResponse {
                             contract_key: response.contract_key,
