@@ -253,6 +253,10 @@ fn deploy(version: u32) -> Result<(), Box<dyn Error>> {
     let webapp_metadata = default_storage_path("webapp.metadata");
     let webapp_parameters = default_storage_path("webapp.parameters");
 
+    let version_saved = std::fs::read_to_string(default_storage_path("version"))?;
+    let version_parsed: u32 = version_saved.parse().unwrap();
+    let version_chosen = std::cmp::max(version_parsed, version);
+
     let out = build_dx_app(
         contract_wasm.clone(),
         webapp_parameters.clone(),
@@ -272,7 +276,7 @@ fn deploy(version: u32) -> Result<(), Box<dyn Error>> {
         webapp_archive.clone(),
         webapp_metadata.clone(),
         webapp_parameters.clone(),
-        version
+        version_chosen.clone()
     )?;
 
     let state_path = default_storage_path("webapp.state");
@@ -283,6 +287,8 @@ fn deploy(version: u32) -> Result<(), Box<dyn Error>> {
         webapp_parameters,
         state_path,
     )?;
+
+    fs::write(default_storage_path("version"), version_chosen.to_string())?;
 
     Ok(())
 }
