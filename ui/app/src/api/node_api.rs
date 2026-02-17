@@ -186,7 +186,7 @@ pub fn subscribe_to_contract_list() -> UnboundedReceiver<Vec<String>> {
 }
 
 /// Notify subscribers of contract update
-fn notify_contract_update(key: &str, state: &FullOrderStateV1, params: &OrderParametersV1) {
+pub fn notify_contract_update(key: &str, state: &FullOrderStateV1, params: &OrderParametersV1) {
     CONTRACT_UPDATE_SENDERS.with(|senders| {
         let mut senders = senders.borrow_mut();
         if let Some(list) = senders.get_mut(key) {

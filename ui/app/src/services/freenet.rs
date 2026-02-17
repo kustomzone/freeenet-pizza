@@ -20,9 +20,9 @@ use super::base::{
 };
 use crate::api::node_api::{
     get_contract_keys, get_contract_state_cached, get_contract_by_key_async,
-    get_contract_state_async, fetch_unknown_contract_async, publish_contract_async,
-    send_contract_delta_async, subscribe_to_contract_async, subscribe_to_contract_list,
-    subscribe_to_contract_updates, CONTRACTS,
+    get_contract_state_async, fetch_unknown_contract_async, notify_contract_update,
+    publish_contract_async, send_contract_delta_async, subscribe_to_contract_async,
+    subscribe_to_contract_list, subscribe_to_contract_updates, CONTRACTS,
 };
 
 /// Private key storage key in browser storage (for key persistence across sessions)
@@ -247,6 +247,9 @@ impl BaseInterface for FreenetService {
                 let mut contracts = CONTRACTS.write();
                 contracts.insert(id.clone(), (new_state.clone(), params.clone(), contract_key));
             }
+
+            // Notify subscribers of the optimistic update
+            notify_contract_update(&id, &new_state, &params);
 
             // Send the delta to the network and wait for acknowledgement
             let response_rx = send_contract_delta_async(&id, &delta)
