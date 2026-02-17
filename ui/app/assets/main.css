@@ -442,6 +442,15 @@ main {
     min-height: 80px;
 }
 
+.form-group select {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-size: 0.95rem;
+    transition: border-color 0.2s;
+}
+
 .form-row {
     display: flex;
     gap: 15px;

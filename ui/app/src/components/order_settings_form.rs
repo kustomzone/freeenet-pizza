@@ -62,7 +62,7 @@ pub fn OrderSettingsForm(
                             option {
                                 value: "{curr.iso_alpha_code}",
                                 selected: curr.iso_alpha_code == currency.read().as_str(),
-                                "{curr.symbol} {curr.iso_alpha_code} - {curr.name}"
+                                "{curr.iso_alpha_code} {curr.symbol} - {curr.name}"
                             }
                         }
                     }
