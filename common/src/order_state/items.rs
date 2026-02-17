@@ -95,20 +95,11 @@ impl ComposableState for ItemsV1 {
                     .iter()
                     .position(|it| it.item.signed_by == incoming.item.signed_by)
                 {
-                    // Replace if incoming version is newer
+                    // Replace if incoming version is newer, otherwise ignore
                     if incoming.item.version > items_c[pos].item.version {
                         items_c[pos] = incoming.clone();
-                    } else if incoming.item.version == items_c[pos].item.version {
-                        return Err(format!(
-                            "Duplicate item version {:?} for {:?}",
-                            incoming.item.version, incoming.item.signed_by
-                        ));
-                    } else if incoming.item.version < items_c[pos].item.version {
-                        return Err(format!(
-                            "Lower item version {:?} for {:?}",
-                            incoming.item.version, incoming.item.signed_by
-                        ));
                     }
+                    // Lower or equal versions are silently ignored (idempotent)
                 } else {
                     // No existing item for this signer – insert
                     items_c.push(incoming.clone());
