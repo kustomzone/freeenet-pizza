@@ -27,6 +27,28 @@ pub fn OrderSettingsForm(
 ) -> Element {
     let mut order_name = use_signal(|| initial_name.clone());
     let mut currency = use_signal(|| initial_currency.clone());
+    let mut currency_search = use_signal(String::new);
+    let mut show_currency_dropdown = use_signal(|| false);
+
+    // Filter currencies based on search (by code, case-insensitive)
+    let filtered_currencies: Vec<_> = {
+        let search = currency_search.read().to_uppercase();
+        if search.is_empty() {
+            COMMON_CURRENCIES.iter().collect()
+        } else {
+            COMMON_CURRENCIES
+                .iter()
+                .filter(|c| c.iso_alpha_code.contains(&search))
+                .collect()
+        }
+    };
+
+    // Get display text for selected currency
+    let selected_display = COMMON_CURRENCIES
+        .iter()
+        .find(|c| c.iso_alpha_code == currency.read().as_str())
+        .map(|c| format!("{} {} - {}", c.iso_alpha_code, c.symbol, c.name))
+        .unwrap_or_else(|| currency.read().clone());
 
     rsx! {
         form {
@@ -55,14 +77,51 @@ pub fn OrderSettingsForm(
                 div {
                     class: "form-group",
                     label { "Currency" }
-                    select {
-                        value: "{currency}",
-                        onchange: move |e| currency.set(e.value()),
-                        for curr in COMMON_CURRENCIES.iter() {
-                            option {
-                                value: "{curr.iso_alpha_code}",
-                                selected: curr.iso_alpha_code == currency.read().as_str(),
-                                "{curr.iso_alpha_code} {curr.symbol} - {curr.name}"
+                    div {
+                        class: "searchable-select",
+                        input {
+                            r#type: "text",
+                            placeholder: "Search currency code (e.g., USD, EUR)...",
+                            value: if show_currency_dropdown() { "{currency_search}" } else { "{selected_display}" },
+                            onfocus: move |_| {
+                                show_currency_dropdown.set(true);
+                                currency_search.set(String::new());
+                            },
+                            oninput: move |e| {
+                                currency_search.set(e.value());
+                                show_currency_dropdown.set(true);
+                            },
+                            onblur: move |_| {
+                                // Delay hiding to allow click on option
+                                spawn(async move {
+                                    gloo_timers::future::TimeoutFuture::new(150).await;
+                                    show_currency_dropdown.set(false);
+                                });
+                            }
+                        }
+                        if show_currency_dropdown() {
+                            div {
+                                class: "searchable-select-dropdown",
+                                for curr in filtered_currencies.iter() {
+                                    div {
+                                        class: if curr.iso_alpha_code == currency.read().as_str() { "searchable-select-option selected" } else { "searchable-select-option" },
+                                        onmousedown: {
+                                            let code = curr.iso_alpha_code.to_string();
+                                            move |e| {
+                                                e.prevent_default();
+                                                currency.set(code.clone());
+                                                show_currency_dropdown.set(false);
+                                            }
+                                        },
+                                        "{curr.iso_alpha_code} {curr.symbol} - {curr.name}"
+                                    }
+                                }
+                                if filtered_currencies.is_empty() {
+                                    div {
+                                        class: "searchable-select-option disabled",
+                                        "No currencies match"
+                                    }
+                                }
                             }
                         }
                     }

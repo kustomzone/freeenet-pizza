@@ -483,6 +483,65 @@ main {
     transition: border-color 0.2s;
 }
 
+/* Searchable Select */
+.searchable-select {
+    position: relative;
+}
+
+.searchable-select input {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-size: 0.95rem;
+    transition: border-color 0.2s;
+}
+
+.searchable-select input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+}
+
+.searchable-select-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    max-height: 200px;
+    overflow-y: auto;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-top: none;
+    border-radius: 0 0 6px 6px;
+    z-index: 1000;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.searchable-select-option {
+    padding: 10px 14px;
+    cursor: pointer;
+    transition: background-color 0.15s;
+}
+
+.searchable-select-option:hover {
+    background-color: var(--hover-bg, rgba(0, 0, 0, 0.05));
+}
+
+.searchable-select-option.selected {
+    background-color: var(--primary-color);
+    color: white;
+}
+
+.searchable-select-option.disabled {
+    color: var(--text-muted);
+    cursor: default;
+    font-style: italic;
+}
+
+.searchable-select-option.disabled:hover {
+    background-color: transparent;
+}
+
 .form-row {
     display: flex;
     gap: 15px;
