@@ -1,14 +1,13 @@
 use dioxus::prelude::*;
 use ed25519_dalek::SigningKey;
+use crate::components::{OrderSettingsForm, OrderSettings};
 
 #[component]
 pub fn NewOrderDialog(
     sk: Signal<SigningKey>,
-    on_create: EventHandler<String>,
+    on_create: EventHandler<OrderSettings>,
     on_close: EventHandler<()>,
 ) -> Element {
-    let mut order_name = use_signal(String::new);
-
     rsx! {
         div {
             class: "modal-overlay",
@@ -21,48 +20,17 @@ pub fn NewOrderDialog(
                     h3 { "Create New Order" }
                 }
 
-                form {
-                    onsubmit: move |e| {
-                        e.prevent_default();
-                        let name = order_name.read().clone();
-                        if !name.is_empty() {
-                            on_create.call(name);
-                        }
+                OrderSettingsForm {
+                    submit_label: "Create Order".to_string(),
+                    on_submit: move |settings: OrderSettings| {
+                        on_create.call(settings);
                     },
-                    div {
-                        class: "modal-body",
-                        div {
-                            class: "form-group",
-                            label { "Order Name" }
-                            input {
-                                r#type: "text",
-                                placeholder: "e.g., Pizza for Friday Party",
-                                required: true,
-                                autofocus: true,
-                                value: "{order_name}",
-                                oninput: move |e| order_name.set(e.value())
-                            }
-                        }
-                        p {
-                            style: "color: var(--text-muted); font-size: 0.9rem;",
-                            "You'll be the creator of this order and can mark items as paid."
-                        }
-                    }
+                    on_cancel: move |_| on_close.call(()),
+                }
 
-                    div {
-                        class: "modal-footer",
-                        button {
-                            class: "btn btn-outline",
-                            r#type: "button",
-                            onclick: move |_| on_close.call(()),
-                            "Cancel"
-                        }
-                        button {
-                            class: "btn btn-primary",
-                            r#type: "submit",
-                            "Create Order"
-                        }
-                    }
+                p {
+                    style: "padding: 0 24px 16px; color: var(--text-muted); font-size: 0.9rem;",
+                    "You'll be the admin of this order and can mark items as paid."
                 }
             }
         }

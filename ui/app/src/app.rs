@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use dioxus::prelude::*;
 
-use crate::components::{NewOrderDialog, OrderViewComponent, Sidebar};
+use crate::components::{NewOrderDialog, OrderViewComponent, Sidebar, OrderSettings};
 use pizza_common::order_state::*;
 use chrono::Utc;
 pub(crate) use crate::services::{FreenetService, BaseService, Contract};
@@ -184,11 +184,11 @@ fn AppContent() -> Element {
             if show_new_order() {
                 NewOrderDialog {
                     sk: sk_signal,
-                    on_create: move |name: String| {
+                    on_create: move |settings: OrderSettings| {
                         let base = base_for_dialog.clone();
                         let sk_val = sk_signal.read().clone();
                         let nav = navigator();
-                        let order = AuthorizedOrderV1::new(Order { name, currency: "USD".to_string(), order_version: 1 }, &sk_val);
+                        let order = AuthorizedOrderV1::new(Order { name: settings.name, currency: settings.currency, order_version: 1 }, &sk_val);
                         let parameters = OrderParametersV1 {
                             owner: sk_val.verifying_key(),
                             created_at: Utc::now(),

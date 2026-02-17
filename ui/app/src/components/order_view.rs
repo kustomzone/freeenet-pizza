@@ -1,9 +1,9 @@
 use dioxus::prelude::*;
 use crate::services::{BaseService, Contract};
-use crate::components::{YourOrderSection, AdminOrderModal, AdminOrderMode};
+use crate::components::{YourOrderSection, AdminOrderModal, AdminOrderMode, OrderSettingsForm, OrderSettings};
 use ed25519_dalek::VerifyingKey;
 use pizza_common::FullOrderStateV1Delta;
-use pizza_common::order_state::{ItemContentV1, ItemV1, AuthorizedItemV1, Paid, AuthorizedPaidV1};
+use pizza_common::order_state::{ItemContentV1, ItemV1, AuthorizedItemV1, Paid, AuthorizedPaidV1, Order, AuthorizedOrderV1};
 use pizza_common::util::format_price_with_currency;
 use futures::StreamExt;
 
@@ -70,6 +70,9 @@ pub fn OrderViewComponent(
 
     // Admin modal state - None when closed, Some(mode) when open
     let mut admin_modal_mode: Signal<Option<AdminOrderMode>> = use_signal(|| None);
+
+    // Edit order settings modal state
+    let mut show_edit_settings = use_signal(|| false);
 
     let state = load_state.read();
     match &*state {
@@ -185,6 +188,13 @@ pub fn OrderViewComponent(
                     }
                     div {
                         class: "header-actions",
+                        if is_creator {
+                            button {
+                                class: "btn btn-outline",
+                                onclick: move |_| show_edit_settings.set(true),
+                                "Edit Settings"
+                            }
+                        }
                         button {
                             class: "btn btn-secondary",
                             onclick: move |_| {
@@ -414,6 +424,59 @@ pub fn OrderViewComponent(
                                             }
                                         });
                                     },
+                                }
+                            }
+                        }
+                    }
+
+                    // Edit order settings modal (admin only)
+                    if show_edit_settings() {
+                        {
+                            let id_for_settings = admin_id.clone();
+                            let base_for_settings = admin_base.clone();
+                            let sk_for_settings = admin_sk.clone();
+                            let current_name = order_name.clone();
+                            let current_currency = currency.clone();
+                            let current_version = c.state.order.order.order_version;
+                            rsx! {
+                                div {
+                                    class: "modal-overlay",
+                                    onclick: move |_| show_edit_settings.set(false),
+                                    div {
+                                        class: "modal",
+                                        onclick: |e| e.stop_propagation(),
+                                        div {
+                                            class: "modal-header",
+                                            h3 { "Edit Order Settings" }
+                                        }
+
+                                        OrderSettingsForm {
+                                            initial_name: current_name,
+                                            initial_currency: current_currency,
+                                            submit_label: "Save Changes".to_string(),
+                                            on_submit: move |settings: OrderSettings| {
+                                                let new_order = Order {
+                                                    name: settings.name,
+                                                    currency: settings.currency,
+                                                    order_version: current_version + 1,
+                                                };
+                                                let authorized_order = AuthorizedOrderV1::new(new_order, &sk_for_settings);
+                                                let delta = FullOrderStateV1Delta {
+                                                    order: Some(authorized_order),
+                                                    items: None,
+                                                    paid: None,
+                                                    version: None,
+                                                };
+                                                let base = base_for_settings.clone();
+                                                let id = id_for_settings.clone();
+                                                wasm_bindgen_futures::spawn_local(async move {
+                                                    let _ = base.publish_delta(id, delta).await;
+                                                });
+                                                show_edit_settings.set(false);
+                                            },
+                                            on_cancel: move |_| show_edit_settings.set(false),
+                                        }
+                                    }
                                 }
                             }
                         }
