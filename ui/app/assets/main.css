@@ -334,6 +334,11 @@ main {
     font-weight: 500;
 }
 
+/* Actions */
+.actions-cell {
+    white-space: nowrap;
+}
+
 /* Status Badge */
 .status-badge {
     display: inline-flex;
