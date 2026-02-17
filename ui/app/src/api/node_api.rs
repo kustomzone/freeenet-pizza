@@ -209,6 +209,8 @@ fn notify_contract_list_change(contracts: Vec<String>) {
 
 thread_local! {
     static CURRENT_WS: RefCell<Option<Rc<RefCell<WebSocket>>>> = const { RefCell::new(None) };
+    /// Queue of serialized requests to send once the WebSocket connection is established
+    static PENDING_SEND_QUEUE: RefCell<Vec<Vec<u8>>> = const { RefCell::new(Vec::new()) };
 }
 
 fn set_current_ws(ws: Rc<RefCell<WebSocket>>) {
@@ -306,6 +308,9 @@ pub fn connect_node_api(config: &NodeConfig) {
         *CONNECTION_STATUS.write() = ConnectionStatus::Connected;
         set_current_ws(ws_for_open.clone());
 
+        // Flush any requests that were queued while connecting
+        flush_pending_requests(&ws_for_open.borrow());
+
         // Re-subscribe to all known contracts
         let contracts = CONTRACTS.read();
         for (_, (_, _, contract_key)) in contracts.iter() {
@@ -364,9 +369,50 @@ pub fn send_request(ws: &WebSocket, request: &ClientRequest) {
     }
 }
 
-/// Send a request using the current WebSocket connection
+/// Send a request using the current WebSocket connection.
+/// If the connection is not yet established, the request is queued and will be sent
+/// once the connection is ready.
 pub fn send_request_current(request: &ClientRequest) {
-    with_current_ws(|ws| send_request(ws, request));
+    let sent = CURRENT_WS.with(|cell| {
+        if let Some(ws) = cell.borrow().as_ref() {
+            let ws = ws.borrow();
+            if ws.ready_state() == WebSocket::OPEN {
+                send_request(&ws, request);
+                return true;
+            }
+        }
+        false
+    });
+
+    if !sent {
+        // Serialize and queue the request to be sent when connection is established
+        match bincode::serialize(request) {
+            Ok(bytes) => {
+                PENDING_SEND_QUEUE.with(|queue| {
+                    queue.borrow_mut().push(bytes);
+                });
+                debug!("Request queued (WebSocket not ready)");
+            }
+            Err(e) => {
+                error!("Failed to serialize request for queue: {}", e);
+            }
+        }
+    }
+}
+
+/// Flush all queued requests (called when WebSocket connection opens)
+fn flush_pending_requests(ws: &WebSocket) {
+    PENDING_SEND_QUEUE.with(|queue| {
+        let requests: Vec<Vec<u8>> = queue.borrow_mut().drain(..).collect();
+        if !requests.is_empty() {
+            info!("Flushing {} queued requests", requests.len());
+            for bytes in requests {
+                if let Err(e) = ws.send_with_u8_array(&bytes) {
+                    error!("Failed to send queued request: {:?}", e);
+                }
+            }
+        }
+    });
 }
 
 fn start_polling_intervals() {
