@@ -510,6 +510,10 @@ main {
     gap: 4px;
 }
 
+.hamburger-btn.hamburger-hidden {
+    display: none !important;
+}
+
 .hamburger-line {
     display: block;
     width: 24px;
@@ -517,6 +521,24 @@ main {
     background-color: var(--sidebar-text);
     border-radius: 2px;
     transition: all 0.3s;
+}
+
+/* Sidebar Close Button */
+.sidebar-close-btn {
+    display: none;
+    background: none;
+    border: none;
+    color: var(--sidebar-text);
+    font-size: 1.5rem;
+    cursor: pointer;
+    padding: 4px 8px;
+    margin-right: 10px;
+    border-radius: 4px;
+    line-height: 1;
+}
+
+.sidebar-close-btn:hover {
+    background-color: rgba(255,255,255,0.1);
 }
 
 /* Sidebar Overlay */
@@ -535,6 +557,14 @@ main {
 @media (max-width: 768px) {
     .hamburger-btn {
         display: flex;
+    }
+
+    .hamburger-btn.hamburger-hidden {
+        display: none;
+    }
+
+    .sidebar-close-btn {
+        display: block;
     }
 
     .sidebar-overlay {

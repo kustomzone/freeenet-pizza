@@ -50,10 +50,10 @@ pub fn Sidebar(
     };
 
     rsx! {
-        // Hamburger button for mobile
+        // Hamburger button for mobile (only visible when sidebar is closed)
         button {
-            class: "hamburger-btn",
-            onclick: move |_| sidebar_open.set(!sidebar_open()),
+            class: if sidebar_open() { "hamburger-btn hamburger-hidden" } else { "hamburger-btn" },
+            onclick: move |_| sidebar_open.set(true),
             span { class: "hamburger-line" }
             span { class: "hamburger-line" }
             span { class: "hamburger-line" }
@@ -71,6 +71,12 @@ pub fn Sidebar(
             class: if sidebar_open() { "sidebar sidebar-open" } else { "sidebar" },
             div {
                 class: "sidebar-header",
+                // Close button for mobile (inside sidebar)
+                button {
+                    class: "sidebar-close-btn",
+                    onclick: move |_| sidebar_open.set(false),
+                    "✕"
+                }
                 h1 {
                     span { "🍕" }
                     span { "Pizza Orders" }
