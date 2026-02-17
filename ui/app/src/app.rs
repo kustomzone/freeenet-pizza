@@ -6,7 +6,7 @@ use pizza_common::order_state::*;
 use chrono::Utc;
 pub(crate) use crate::services::{FreenetService, BaseService, Contract};
 use ed25519_dalek::{SigningKey, VerifyingKey};
-use futures::StreamExt;
+use futures::{FutureExt, StreamExt};
 use crate::api::{get_auth_token_from_window, NodeConfig, connect_node_api, NODE_HTTP_BASE, AUTH_TOKEN};
 
 #[derive(Clone, Routable, Debug, PartialEq)]
@@ -62,37 +62,57 @@ fn AppContent() -> Element {
     use_effect(move || {
         let base = base.clone();
         spawn(async move {
-            // Initial load from localStorage keys
+            // Initial load from localStorage keys - load pessimistically with timeouts
             if let Ok(ids) = base.get_contracts() {
-                let mut loaded_contracts = HashMap::new();
+                // Load contracts incrementally with individual timeouts
+                // This prevents hanging if network requests fail
                 for id in ids.iter() {
-                    if let Ok(contract) = base.get_contract(id.clone()).await {
-                        let vk = contract.parameters.owner;
-                        loaded_contracts.insert(id.clone(), Contract {
-                            state: contract.state,
-                            parameters: contract.parameters,
-                        });
-                    }
-                }
-                contracts.set(loaded_contracts);
-
-                // Subscribe to state updates for each contract
-                for id in ids {
                     let base = base.clone();
-                    let id_clone = id.clone();
+                    let id = id.clone();
                     spawn(async move {
-                        let mut stream = base.subscribe_contract_state(id_clone.clone());
-                        while let Some(updated) = stream.next().await {
-                            let mut current = contracts.peek().clone();
-                            if let Some(existing) = current.get_mut(&id_clone) {
-                                existing.state = updated.state;
-                                existing.parameters = updated.parameters;
-                                contracts.set(current);
+                        // Use a timeout for each contract load (5 seconds)
+                        let load_future = base.get_contract(id.clone());
+                        let timeout_future = gloo_timers::future::TimeoutFuture::new(5_000);
+
+                        // Race between load and timeout
+                        futures::select! {
+                            result = load_future.fuse() => {
+                                if let Ok(contract) = result {
+                                    // Update contracts incrementally as each loads
+                                    let mut current = contracts.peek().clone();
+                                    current.insert(id.clone(), Contract {
+                                        state: contract.state,
+                                        parameters: contract.parameters,
+                                    });
+                                    contracts.set(current);
+
+                                    // Subscribe to state updates for this contract
+                                    let base = base.clone();
+                                    let id_clone = id.clone();
+                                    spawn(async move {
+                                        let mut stream = base.subscribe_contract_state(id_clone.clone());
+                                        while let Some(updated) = stream.next().await {
+                                            let mut current = contracts.peek().clone();
+                                            if let Some(existing) = current.get_mut(&id_clone) {
+                                                existing.state = updated.state;
+                                                existing.parameters = updated.parameters;
+                                                contracts.set(current);
+                                            }
+                                        }
+                                    });
+                                }
+                            }
+                            _ = timeout_future.fuse() => {
+                                // Timeout - contract load hung, skip this contract
+                                log::warn!("Timeout loading contract: {}", id);
                             }
                         }
                     });
                 }
             }
+
+            // Set loading to false after a brief delay to allow initial loads to complete
+            gloo_timers::future::TimeoutFuture::new(500).await;
             loading.set(false);
 
             // Subscribe to contract list changes
