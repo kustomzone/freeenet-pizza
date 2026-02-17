@@ -135,7 +135,7 @@ pub fn AdminOrderModal(
 
             // Use wasm_bindgen_futures to spawn a task that won't be cancelled
             wasm_bindgen_futures::spawn_local(async move {
-                let result = base.publish_delta(id, delta).await;
+                let _ = base.publish_delta(id, delta).await;
             });
 
             on_close.call(());

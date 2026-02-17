@@ -119,6 +119,10 @@ thread_local! {
     /// Contract list subscribers
     static CONTRACT_LIST_SENDERS: RefCell<Vec<UnboundedSender<Vec<String>>>> =
         RefCell::new(Vec::new());
+
+    /// Tracks contracts we have subscribed to (for re-subscription on reconnect)
+    static SUBSCRIBED_CONTRACTS: RefCell<std::collections::HashSet<String>> =
+        RefCell::new(std::collections::HashSet::new());
 }
 
 /// Register a pending PUT request and return a receiver for the response
@@ -330,14 +334,21 @@ pub fn connect_node_api(config: &NodeConfig) {
         // Flush any requests that were queued while connecting
         flush_pending_requests(&ws_for_open.borrow());
 
-        // Re-subscribe to all known contracts
+        // Re-subscribe to all tracked subscriptions
+        let subscribed_keys: Vec<String> = SUBSCRIBED_CONTRACTS.with(|subs| {
+            subs.borrow().iter().cloned().collect()
+        });
+
         let contracts = CONTRACTS.read();
-        for (_, (_, _, contract_key)) in contracts.iter() {
-            let request = ClientRequest::ContractOp(ContractRequest::Subscribe {
-                key: contract_key.clone().into(),
-                summary: None,
-            });
-            send_request(&ws_for_open.borrow(), &request);
+        for key_str in subscribed_keys {
+            if let Some((_, _, contract_key)) = contracts.get(&key_str) {
+                let request = ClientRequest::ContractOp(ContractRequest::Subscribe {
+                    key: contract_key.clone().into(),
+                    summary: None,
+                });
+                send_request(&ws_for_open.borrow(), &request);
+                info!("Re-subscribing to contract on reconnect: {}", key_str);
+            }
         }
 
         if !POLLING_STARTED.swap(true, Ordering::SeqCst) {
@@ -347,7 +358,7 @@ pub fn connect_node_api(config: &NodeConfig) {
     ws.set_onopen(Some(onopen.as_ref().unchecked_ref()));
     onopen.forget();
 
-    let onmessage = Closure::<dyn FnMut(MessageEvent)>::new(move |e: MessageEvent| {
+        let onmessage = Closure::<dyn FnMut(MessageEvent)>::new(move |e: MessageEvent| {
         let data = e.data();
         if let Ok(abuf) = data.dyn_into::<js_sys::ArrayBuffer>() {
             let bytes = js_sys::Uint8Array::new(&abuf).to_vec();
@@ -834,6 +845,11 @@ pub fn publish_contract_async(
     send_request_current(&request);
     info!("Publishing contract: {}", key_str);
 
+    // Track this subscription for re-subscription on reconnect (PUT with subscribe=true)
+    SUBSCRIBED_CONTRACTS.with(|subs| {
+        subs.borrow_mut().insert(key_str.clone());
+    });
+
     // Notify contract list change
     let contracts = CONTRACTS.read();
     let keys: Vec<String> = contracts.keys().cloned().collect();
@@ -849,6 +865,11 @@ pub fn subscribe_to_contract_async(
     let contracts = CONTRACTS.read();
     if let Some((_, _, contract_key)) = contracts.get(contract_key_str) {
         let response_rx = register_pending_subscribe(contract_key_str);
+
+        // Track this subscription for re-subscription on reconnect
+        SUBSCRIBED_CONTRACTS.with(|subs| {
+            subs.borrow_mut().insert(contract_key_str.to_string());
+        });
 
         let request = ClientRequest::ContractOp(ContractRequest::Subscribe {
             key: contract_key.clone().into(),
