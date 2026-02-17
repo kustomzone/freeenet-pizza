@@ -391,11 +391,29 @@ pub fn OrderViewComponent(
 
                     // Admin order modal (add or edit)
                     if let Some(mode) = admin_modal_mode.read().clone() {
-                        AdminOrderModal {
-                            contract_id: admin_id.clone(),
-                            owner_sk: admin_sk.clone(),
-                            mode: mode,
-                            on_close: move |_| admin_modal_mode.set(None),
+                        {
+                            let id_for_refresh = admin_id.clone();
+                            let base_for_refresh = admin_base.clone();
+                            rsx! {
+                                AdminOrderModal {
+                                    contract_id: admin_id.clone(),
+                                    owner_sk: admin_sk.clone(),
+                                    mode: mode,
+                                    on_close: move |_| {
+                                        admin_modal_mode.set(None);
+                                        // Refresh state after modal closes to ensure we have latest data
+                                        let base = base_for_refresh.clone();
+                                        let id = id_for_refresh.clone();
+                                        spawn(async move {
+                                            // Small delay to allow publish_delta to complete
+                                            gloo_timers::future::TimeoutFuture::new(100).await;
+                                            if let Ok(contract) = base.get_contract(id).await {
+                                                load_state.set(LoadState::Loaded(contract));
+                                            }
+                                        });
+                                    },
+                                }
+                            }
                         }
                     }
                 }

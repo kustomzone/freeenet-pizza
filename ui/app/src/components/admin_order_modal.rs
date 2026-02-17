@@ -65,7 +65,7 @@ pub fn AdminOrderModal(
                 }
             };
 
-            match &mode {
+            let delta = match &mode {
                 AdminOrderMode::Add => {
                     // Generate a new random VK for this order
                     let mut rng = rand::thread_rng();
@@ -82,17 +82,12 @@ pub fn AdminOrderModal(
                             price_cents: price,
                         },
                     };
-                    let delta = FullOrderStateV1Delta {
+                    FullOrderStateV1Delta {
                         order: None,
                         items: Some(vec![AuthorizedItemV1::new(new_item, &owner_sk)]),
                         paid: None,
                         version: None,
-                    };
-                    let base = base.clone();
-                    let id = contract_id.clone();
-                    spawn(async move {
-                        let _ = base.publish_delta(id, delta).await;
-                    });
+                    }
                 }
                 AdminOrderMode::Edit { target_vk, .. } => {
                     let target_vk = *target_vk;
@@ -104,32 +99,40 @@ pub fn AdminOrderModal(
                     };
 
                     // Find the existing item
-                    if let Some(existing) = current_state.state.items.items.iter().find(|it| it.item.signed_by == target_vk) {
-                        let new_item = ItemV1 {
-                            signed_by: target_vk,
-                            owner_sign: true,
-                            version: existing.item.version + 1,
-                            content: ItemContentV1::Item {
-                                display_name: dn,
-                                order: ot,
-                                price_cents: price,
-                            },
-                        };
-                        let delta = FullOrderStateV1Delta {
-                            order: None,
-                            items: Some(vec![AuthorizedItemV1::new(new_item, &owner_sk)]),
-                            paid: None,
-                            version: None,
-                        };
-                        let base = base.clone();
-                        let id = contract_id.clone();
-                        spawn(async move {
-                            let _ = base.publish_delta(id, delta).await;
-                        });
+                    let existing = match current_state.state.items.items.iter().find(|it| it.item.signed_by == target_vk) {
+                        Some(e) => e,
+                        None => return,
+                    };
+
+                    let new_item = ItemV1 {
+                        signed_by: target_vk,
+                        owner_sign: true,
+                        version: existing.item.version + 1,
+                        content: ItemContentV1::Item {
+                            display_name: dn,
+                            order: ot,
+                            price_cents: price,
+                        },
+                    };
+                    FullOrderStateV1Delta {
+                        order: None,
+                        items: Some(vec![AuthorizedItemV1::new(new_item, &owner_sk)]),
+                        paid: None,
+                        version: None,
                     }
                 }
-            }
+            };
 
+            // Publish delta and close modal after completion
+            let base = base.clone();
+            let id = contract_id.clone();
+            spawn(async move {
+                let _ = base.publish_delta(id, delta).await;
+                // Note: on_close is called synchronously before spawn,
+                // but the state update happens in publish_delta via notify_contract_update
+            });
+
+            // Close immediately - the subscription will update the parent when publish completes
             on_close.call(());
         }
     };
