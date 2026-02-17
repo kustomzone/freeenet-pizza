@@ -29,7 +29,7 @@ pub fn Sidebar(
             span {
                 class: "status-indicator connecting",
                 title: "Connecting to Freenet node...",
-                "○"
+                "●"
             }
         },
         ConnectionStatus::Disconnected => rsx! {
@@ -43,7 +43,7 @@ pub fn Sidebar(
             span {
                 class: "status-indicator error",
                 title: "Connection error: {e}",
-                "!"
+                "❌"
             }
         },
     };
@@ -99,8 +99,8 @@ pub fn Sidebar(
                                             "{contract.state.order.order.name}"
                                             if is_admin {
                                                 span {
-                                                    class: "status-badge",
-                                                    style: "color: red; margin-left: 8px; font-size: 0.7em; padding: 2px 6px;",
+                                                    class: "status-badge admin",
+                                                    style: "margin-left: 8px; font-size: 0.7em; padding: 2px 6px;",
                                                     "Admin"
                                                 }
                                             }

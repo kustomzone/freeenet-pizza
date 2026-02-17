@@ -38,7 +38,7 @@ pub fn OrderViewComponent(
             let base = base.clone();
             spawn(async move {
                 // Fetch contract (tries cache first, then network)
-                match base.get_contract(id.clone()).await {
+                match base.get_contract_async(id.clone()).await {
                     Ok(contract) => {
                         load_state.set(LoadState::Loaded(contract));
                     }
