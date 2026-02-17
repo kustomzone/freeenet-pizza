@@ -20,7 +20,7 @@ use super::base::{
 };
 use crate::api::node_api::{
     get_contract_keys, get_contract_state_cached, get_contract_by_key_async,
-    publish_contract_async, send_contract_delta_async,
+    fetch_unknown_contract_async, publish_contract_async, send_contract_delta_async,
     subscribe_to_contract_async, subscribe_to_contract_list, subscribe_to_contract_updates,
     CONTRACTS,
 };
@@ -137,7 +137,9 @@ impl BaseInterface for FreenetService {
     }
 
     /// Fetch contract state from Freenet via GET request.
+    /// If the contract is unknown, attempts to fetch it from the network.
     fn get_contract_async(&self, id: String) -> AsyncResult<Contract> {
+        let storage = self.storage.clone();
         Box::pin(async move {
             // Check if we have it cached first
             if let Some((state, params)) = get_contract_state_cached(&id) {
@@ -157,6 +159,25 @@ impl BaseInterface for FreenetService {
                 }
                 // Return cached state if network request failed
                 return Ok(Contract { state, parameters: params });
+            }
+
+            // Contract not in cache - try to fetch from network
+            let rx = fetch_unknown_contract_async(&id);
+            match rx.await {
+                Ok(response) => {
+                    if let Some(state) = response.state {
+                        // Contract was found and cached by handle_get_response
+                        // Get the params from the cache now
+                        if let Some((_, params)) = get_contract_state_cached(&id) {
+                            // Save to localStorage for future sessions
+                            save_contract_key_static(&storage, &id);
+                            return Ok(Contract { state, parameters: params });
+                        }
+                    }
+                }
+                Err(_) => {
+                    // Channel cancelled
+                }
             }
 
             Err(format!("Contract not found: {}", id).into())

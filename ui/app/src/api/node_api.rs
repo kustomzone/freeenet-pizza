@@ -440,10 +440,10 @@ fn handle_contract_response(response: ContractResponse) {
     match response {
         ContractResponse::GetResponse {
             key,
-            contract: _,
+            contract,
             state,
         } => {
-            handle_get_response(key, state);
+            handle_get_response(key, contract, state);
         }
         ContractResponse::PutResponse { key } => {
             handle_put_response(key);
@@ -463,7 +463,7 @@ fn handle_contract_response(response: ContractResponse) {
     }
 }
 
-fn handle_get_response(key: ContractKey, state: WrappedState) {
+fn handle_get_response(key: ContractKey, contract: Option<ContractContainer>, state: WrappedState) {
     let key_str = key.to_string();
     info!("Received GetResponse for contract: {}", key_str);
 
@@ -485,13 +485,35 @@ fn handle_get_response(key: ContractKey, state: WrappedState) {
     match from_reader::<FullOrderStateV1, &[u8]>(state_bytes) {
         Ok(order_state) => {
             let mut contracts = CONTRACTS.write();
-            if let Some((_, params, contract_key)) = contracts.get(&key_str).cloned() {
+
+            // Try to get existing params, or extract from contract container
+            let params_opt: Option<OrderParametersV1> = if let Some((_, params, _)) = contracts.get(&key_str) {
+                Some(params.clone())
+            } else if let Some(ref container) = contract {
+                // Extract parameters from the contract container
+                let params = container.params();
+                let params_bytes = params.as_ref();
+                from_reader::<OrderParametersV1, &[u8]>(params_bytes).ok()
+            } else {
+                None
+            };
+
+            if let Some(params) = params_opt {
+                let is_new = !contracts.contains_key(&key_str);
                 contracts.insert(
                     key_str.clone(),
-                    (order_state.clone(), params.clone(), contract_key),
+                    (order_state.clone(), params.clone(), key.clone()),
                 );
                 drop(contracts);
+
                 notify_contract_update(&key_str, &order_state, &params);
+
+                // If this is a new contract, notify contract list change
+                if is_new {
+                    let contracts = CONTRACTS.read();
+                    let keys: Vec<String> = contracts.keys().cloned().collect();
+                    notify_contract_list_change(keys);
+                }
 
                 // Resolve pending GET
                 PENDING_GET.with(|pending| {
@@ -503,11 +525,30 @@ fn handle_get_response(key: ContractKey, state: WrappedState) {
                     }
                 });
             } else {
+                drop(contracts);
                 warn!("Got state but no parameters for {}", key_str);
+                // Still resolve pending GET with None since we can't use the state without params
+                PENDING_GET.with(|pending| {
+                    if let Some(sender) = pending.borrow_mut().remove(&key_str) {
+                        let _ = sender.send(GetResponse {
+                            contract_key: key_str.clone(),
+                            state: None,
+                        });
+                    }
+                });
             }
         }
         Err(e) => {
             error!("Failed to deserialize state: {}", e);
+            // Resolve pending GET with None on error
+            PENDING_GET.with(|pending| {
+                if let Some(sender) = pending.borrow_mut().remove(&key_str) {
+                    let _ = sender.send(GetResponse {
+                        contract_key: key_str.clone(),
+                        state: None,
+                    });
+                }
+            });
         }
     }
 }
@@ -899,4 +940,31 @@ pub fn get_contract_by_key_async(contract_key_str: &str) -> Option<oneshot::Rece
     } else {
         None
     }
+}
+
+/// Fetch an unknown contract by its key string.
+/// This requests the contract code to get the parameters.
+/// Use this when visiting an order page for a contract we don't know about.
+pub fn fetch_unknown_contract_async(contract_key_str: &str) -> oneshot::Receiver<GetResponse> {
+    use std::str::FromStr;
+    use freenet_stdlib::prelude::ContractInstanceId;
+
+    // Parse the contract key string to ContractInstanceId
+    let contract_id = ContractInstanceId::from_str(contract_key_str)
+        .expect("Invalid contract key string");
+
+    // Register pending request
+    let response_rx = register_pending_get(contract_key_str);
+
+    // Send GET request with return_contract_code: true to get parameters
+    let request = ClientRequest::ContractOp(ContractRequest::Get {
+        key: contract_id,
+        return_contract_code: true,
+        subscribe: true,
+        blocking_subscribe: false,
+    });
+    send_request_current(&request);
+    info!("Fetching unknown contract: {}", contract_key_str);
+
+    response_rx
 }
