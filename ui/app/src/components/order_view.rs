@@ -161,9 +161,15 @@ pub fn OrderViewComponent(
                         button {
                             class: "btn btn-secondary",
                             onclick: move |_| {
-                                show_invite_copied.set(true);
+                                if let Some(window) = web_sys::window() {
+                                    if let Ok(href) = window.location().href() {
+                                        let clipboard = window.navigator().clipboard();
+                                        let _ = clipboard.write_text(&href);
+                                        show_invite_copied.set(true);
+                                    }
+                                }
                             },
-                            if show_invite_copied() { "Invite link copied!" } else { "Invite other users (will copy link)" }
+                            if show_invite_copied() { "Invite link copied!" } else { "Invite" }
                         }
                     }
                 }
