@@ -187,6 +187,12 @@ pub fn Sidebar(
                     onclick: move |_| on_new_order.call(()),
                     span { "+ New Order" }
                 }
+                Link {
+                    to: Route::AboutPageRoute {},
+                    class: "sidebar-about-link",
+                    onclick: move |_| sidebar_open.set(false),
+                    "About"
+                }
             }
         }
     }

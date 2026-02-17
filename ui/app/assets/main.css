@@ -160,6 +160,20 @@ body {
     border-top: 1px solid rgba(255,255,255,0.1);
 }
 
+.sidebar-about-link {
+    display: block;
+    text-align: center;
+    margin-top: 12px;
+    color: rgba(255, 255, 255, 0.6);
+    text-decoration: none;
+    font-size: 0.85rem;
+    transition: color 0.2s;
+}
+
+.sidebar-about-link:hover {
+    color: rgba(255, 255, 255, 0.9);
+}
+
 .item-actions > * {
     margin-left: 6px;
     margin-right: 6px;
@@ -697,5 +711,106 @@ main {
 
     .content-header {
         padding-left: 60px;
+    }
+}
+
+/* About Page */
+.about-page {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 40px 20px;
+}
+
+.about-header {
+    margin-bottom: 30px;
+}
+
+.about-header h1 {
+    font-size: 2rem;
+    color: var(--text-color);
+}
+
+.about-content {
+    background: var(--card-bg);
+    border-radius: 12px;
+    padding: 30px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.about-section {
+    margin-bottom: 30px;
+}
+
+.about-section:last-child {
+    margin-bottom: 0;
+}
+
+.about-section h2 {
+    font-size: 1.3rem;
+    color: var(--primary-color);
+    margin-bottom: 12px;
+}
+
+.about-section p {
+    color: var(--text-color);
+    line-height: 1.7;
+}
+
+.about-section ul {
+    list-style: none;
+    padding: 0;
+}
+
+.about-section ul li {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.about-section ul li:last-child {
+    border-bottom: none;
+}
+
+.about-section a {
+    color: var(--secondary-color);
+    text-decoration: none;
+}
+
+.about-section a:hover {
+    text-decoration: underline;
+}
+
+.use-cases-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 15px;
+    margin-top: 15px;
+}
+
+.use-case {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px 15px;
+    background: var(--background-color);
+    border-radius: 8px;
+    text-align: center;
+}
+
+.use-case-icon {
+    font-size: 2rem;
+    margin-bottom: 8px;
+}
+
+@media (max-width: 768px) {
+    .about-page {
+        padding: 20px 15px;
+    }
+
+    .about-content {
+        padding: 20px;
+    }
+
+    .use-cases-grid {
+        grid-template-columns: repeat(2, 1fr);
     }
 }

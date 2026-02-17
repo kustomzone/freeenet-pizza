@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use crate::api::{
     connect_node_api, get_auth_token_from_window, NodeConfig, AUTH_TOKEN, NODE_HTTP_BASE,
 };
-use crate::components::{NewOrderDialog, OrderSettings, OrderViewComponent, Sidebar};
+use crate::components::{AboutPage, NewOrderDialog, OrderSettings, OrderViewComponent, Sidebar};
 pub(crate) use crate::services::{BaseService, Contract, FreenetService};
 use chrono::Utc;
 use ed25519_dalek::{SigningKey, VerifyingKey};
@@ -19,9 +19,18 @@ pub enum Route {
         HomePage {},
         #[route("/order/:id")]
         OrderPage { id: String },
+        #[route("/about")]
+        AboutPageRoute {},
     #[end_layout]
     #[route("/not-found/:..route")]
     PageNotFound { route: Vec<String> },
+}
+
+#[component]
+fn AboutPageRoute() -> Element {
+    rsx! {
+        AboutPage {}
+    }
 }
 #[component]
 fn OrderPage(id: String) -> Element {
