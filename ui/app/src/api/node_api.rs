@@ -219,7 +219,7 @@ pub fn notify_contract_update(key: &str, state: &FullOrderStateV1, params: &Orde
 }
 
 /// Notify subscribers of contract list change
-fn notify_contract_list_change(contracts: Vec<String>) {
+pub fn notify_contract_list_change(contracts: Vec<String>) {
     CONTRACT_LIST_SENDERS.with(|senders| {
         let mut senders = senders.borrow_mut();
         senders.retain(|sender| sender.unbounded_send(contracts.clone()).is_ok());

@@ -52,6 +52,7 @@ pub fn App() -> Element {
 fn AppContent() -> Element {
     let base = use_context::<BaseService>();
     let base_for_dialog = base.clone();
+    let base_for_delete = base.clone();
     let sk = base.get_private_key().unwrap();
     let sk_signal = use_context_provider(|| Signal::new(sk.clone()));
 
@@ -174,6 +175,13 @@ fn AppContent() -> Element {
                 contracts: contracts,
                 sk: sk_signal,
                 on_new_order: move |_| show_new_order.set(true),
+                on_delete: move |id: String| {
+                    base_for_delete.remove_contract(id.clone());
+                    // Also remove from local contracts signal
+                    let mut current = contracts.peek().clone();
+                    current.remove(&id);
+                    contracts.set(current);
+                },
                 selected_order_id: selected_order_id,
                 loading: loading()
             }

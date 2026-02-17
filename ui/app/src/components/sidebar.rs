@@ -10,6 +10,7 @@ pub fn Sidebar(
     contracts: Signal<HashMap<String, Contract>>,
     sk: Signal<SigningKey>,
     on_new_order: EventHandler<()>,
+    on_delete: EventHandler<String>,
     selected_order_id: Option<String>,
     #[props(default = false)]
     loading: bool,
@@ -113,34 +114,47 @@ pub fn Sidebar(
 
                             let is_fully_paid = total_cents > 0 && paid_cents == total_cents;
 
+                            let delete_id = id.clone();
                             rsx! {
-                                Link {
-                                    to: Route::OrderPage { id: order_id },
-                                    onclick: move |_| sidebar_open.set(false),
-                                    li {
-                                        class: if is_active { "order-item active" } else { "order-item" },
+                                li {
+                                    class: if is_active { "order-item active" } else { "order-item" },
+                                    Link {
+                                        to: Route::OrderPage { id: order_id },
+                                        onclick: move |_| sidebar_open.set(false),
                                         div {
-                                            class: "order-item-name",
-                                            "{contract.state.order.order.name}"
-                                            if is_admin {
-                                                span {
-                                                    class: "status-badge admin",
-                                                    style: "margin-left: 8px; font-size: 0.7em; padding: 2px 6px;",
-                                                    "Admin"
+                                            class: "order-item-content",
+                                            div {
+                                                class: "order-item-name",
+                                                "{contract.state.order.order.name}"
+                                                if is_admin {
+                                                    span {
+                                                        class: "status-badge admin",
+                                                        style: "margin-left: 8px; font-size: 0.7em; padding: 2px 6px;",
+                                                        "Admin"
+                                                    }
+                                                }
+                                                if is_fully_paid {
+                                                    span {
+                                                        class: "status-badge paid",
+                                                        style: "margin-left: 8px; font-size: 0.7em; padding: 2px 6px;",
+                                                        "Paid"
+                                                    }
                                                 }
                                             }
-                                            if is_fully_paid {
-                                                span {
-                                                    class: "status-badge paid",
-                                                    style: "margin-left: 8px; font-size: 0.7em; padding: 2px 6px;",
-                                                    "Paid"
-                                                }
+                                            div {
+                                                class: "order-item-meta",
+                                                "{contract.state.items.items.len()} items · {contract.parameters.created_at.to_rfc3339()}"
                                             }
                                         }
-                                        div {
-                                            class: "order-item-meta",
-                                            "{contract.state.items.items.len()} items · {contract.parameters.created_at.to_rfc3339()}"
-                                        }
+                                    }
+                                    button {
+                                        class: "order-item-delete",
+                                        title: "Remove from list",
+                                        onclick: move |e| {
+                                            e.stop_propagation();
+                                            on_delete.call(delete_id.clone());
+                                        },
+                                        "×"
                                     }
                                 }
                             }

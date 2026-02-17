@@ -97,11 +97,21 @@ body {
     cursor: pointer;
     transition: background-color 0.2s;
     border-left: 3px solid transparent;
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
 .sidebar-content a {
     text-decoration: none;
     color: white;
+    flex: 1;
+    min-width: 0;
+}
+
+.order-item-content {
+    flex: 1;
+    min-width: 0;
 }
 
 .order-item:hover {
@@ -121,6 +131,28 @@ body {
 .order-item-meta {
     font-size: 0.8rem;
     color: rgba(255,255,255,0.6);
+}
+
+.order-item-delete {
+    background: none;
+    border: none;
+    color: rgba(255,255,255,0.4);
+    font-size: 1.2rem;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    line-height: 1;
+    opacity: 0;
+    transition: opacity 0.2s, color 0.2s, background-color 0.2s;
+}
+
+.order-item:hover .order-item-delete {
+    opacity: 1;
+}
+
+.order-item-delete:hover {
+    color: var(--primary-color);
+    background-color: rgba(255,255,255,0.1);
 }
 
 .sidebar-footer {

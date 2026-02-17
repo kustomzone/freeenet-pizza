@@ -19,7 +19,7 @@ use super::base::{
 };
 use crate::api::node_api::{
     get_contract_keys, get_contract_state_cached, get_contract_by_key_async,
-    fetch_unknown_contract_async, notify_contract_update,
+    fetch_unknown_contract_async, notify_contract_update, notify_contract_list_change,
     publish_contract_async, send_contract_delta_async, subscribe_to_contract_async,
     subscribe_to_contract_list, subscribe_to_contract_updates, CONTRACTS,
 };
@@ -110,6 +110,20 @@ fn save_contract_key_static(storage: &Storage, key: &str) {
         if let Ok(json) = serde_json::to_string(&contract_keys) {
             let _ = storage.set_item(CONTRACT_LIST_KEY, &json);
         }
+    }
+}
+
+/// Static helper to remove a contract key from localStorage.
+fn remove_contract_key_static(storage: &Storage, key: &str) {
+    let mut contract_keys: Vec<String> = match storage.get_item(CONTRACT_LIST_KEY) {
+        Ok(Some(json)) => serde_json::from_str(&json).unwrap_or_default(),
+        _ => Vec::new(),
+    };
+
+    contract_keys.retain(|k| k != key);
+
+    if let Ok(json) = serde_json::to_string(&contract_keys) {
+        let _ = storage.set_item(CONTRACT_LIST_KEY, &json);
     }
 }
 
@@ -319,6 +333,23 @@ impl BaseInterface for FreenetService {
     fn subscribe_contract_state(&self, id: String) -> Pin<Box<dyn Stream<Item = Contract>>> {
         let rx = subscribe_to_contract_updates(&id);
         Box::pin(rx.map(|(state, parameters)| Contract { state, parameters }))
+    }
+
+    /// Remove a contract from the local list.
+    ///
+    /// This removes the contract from localStorage but does not delete it from the network.
+    fn remove_contract(&self, id: String) {
+        remove_contract_key_static(&self.storage, &id);
+
+        // Remove from in-memory cache
+        {
+            let mut contracts = CONTRACTS.write();
+            contracts.remove(&id);
+        }
+
+        // Notify subscribers of the change
+        let keys = get_contract_keys();
+        notify_contract_list_change(keys);
     }
 }
 

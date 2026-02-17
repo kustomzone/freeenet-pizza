@@ -87,6 +87,9 @@ pub trait BaseInterface {
     ///
     /// Returns a stream that emits the contract state whenever it changes.
     fn subscribe_contract_state(&self, id: String) -> Pin<Box<dyn Stream<Item = Contract>>>;
+
+    /// Remove a contract from the local list (does not delete from network).
+    fn remove_contract(&self, id: String);
 }
 
 /// Wrapper type for BaseInterface implementations.

@@ -294,4 +294,24 @@ impl BaseInterface for LocalStorageService {
         all_subs.entry(id).or_insert_with(Vec::new).push(tx);
         Box::pin(rx)
     }
+
+    fn remove_contract(&self, id: String) {
+        // Remove state and params
+        let _ = self.storage.remove_item(&Self::get_state_key(&id));
+        let _ = self.storage.remove_item(&Self::get_params_key(&id));
+
+        // Update contracts list
+        if let Ok(Some(s)) = self.storage.get_item(CONTRACTS_KEY) {
+            if let Ok(mut contracts) = serde_json::from_str::<Vec<String>>(&s) {
+                contracts.retain(|c| c != &id);
+                if let Ok(json) = serde_json::to_string(&contracts) {
+                    let _ = self.storage.set_item(CONTRACTS_KEY, &json);
+                }
+
+                // Notify subscribers
+                let mut subs = self.contract_subscribers.lock().unwrap();
+                subs.retain(|sub| sub.unbounded_send(contracts.clone()).is_ok());
+            }
+        }
+    }
 }
