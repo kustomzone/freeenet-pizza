@@ -2,6 +2,7 @@ use crate::components::{
     AdminOrderModal, AdminOrderMode, OrderSettings, OrderSettingsForm, YourOrderSection,
 };
 use crate::services::{BaseService, Contract};
+use crate::util::format_utc_as_full_datetime;
 use dioxus::prelude::*;
 use ed25519_dalek::VerifyingKey;
 use futures::StreamExt;
@@ -98,7 +99,8 @@ pub fn OrderViewComponent(id: String) -> Element {
         LoadState::Loaded(c) => {
             let order_name = c.state.order.order.name.clone();
             let currency = c.state.order.order.currency.clone();
-            let created_at = c.parameters.created_at.to_rfc3339();
+            let created_at =
+                format_utc_as_full_datetime(c.parameters.created_at.timestamp_millis());
             let is_creator = c.parameters.owner == user_vk;
 
             let total_cents = c

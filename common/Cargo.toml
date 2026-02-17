@@ -14,7 +14,7 @@ ciborium.workspace = true
 rusty-money.workspace = true
 # Base ed25519-dalek without rand - contracts only need verification
 ed25519-dalek = { version = "2.1.1", default-features = false, features = ["alloc", "serde"] }
-chrono = { version = "0.4", default-features = false, features = ["serde"] }
+chrono = { version = "0.4", default-features = false, features = ["serde", "alloc", "clock"] }
 thiserror.workspace = true
 # Internal dependencies
 freenet-scaffold.workspace = true

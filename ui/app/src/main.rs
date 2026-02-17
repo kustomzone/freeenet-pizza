@@ -6,6 +6,7 @@ mod api;
 mod app;
 mod components;
 mod services;
+mod util;
 
 use dioxus::prelude::*;
 use std::rc::Rc;

@@ -1,5 +1,6 @@
 use crate::api::{ConnectionStatus, CONNECTION_STATUS};
 use crate::app::{Contract, Route};
+use crate::util::format_utc_as_full_datetime;
 use dioxus::prelude::*;
 use ed25519_dalek::SigningKey;
 use pizza_common::order_state::ItemContentV1;
@@ -142,7 +143,7 @@ pub fn Sidebar(
                                             }
                                             div {
                                                 class: "order-item-meta",
-                                                "{contract.state.items.items.len()} items · {contract.parameters.created_at.to_rfc3339()}"
+                                                "{contract.state.items.items.len()} items · {format_utc_as_full_datetime(contract.parameters.created_at.timestamp_millis())}"
                                             }
                                         }
                                     }
