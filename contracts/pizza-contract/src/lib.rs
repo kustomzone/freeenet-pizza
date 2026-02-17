@@ -3,7 +3,9 @@ use freenet_stdlib::prelude::*;
 
 use freenet_scaffold::ComposableState;
 use freenet_stdlib::prelude::ContractError;
-use pizza_common::order_state::{OrderParametersV1,  FullOrderStateV1Delta, FullOrderStateV1Summary};
+use pizza_common::order_state::{
+    FullOrderStateV1Delta, FullOrderStateV1Summary, OrderParametersV1,
+};
 use pizza_common::FullOrderStateV1;
 
 // NOTE: Crypto helper modules intentionally not compiled by default.

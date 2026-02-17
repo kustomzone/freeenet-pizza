@@ -1,3 +1,4 @@
+use crate::order_state::items::ItemContentV1::Item;
 use crate::order_state::OrderParametersV1;
 use crate::util::sign_struct;
 use crate::util::{truncated_base64, verify_struct};
@@ -7,7 +8,6 @@ use freenet_scaffold::util::{fast_hash, FastHash};
 use freenet_scaffold::ComposableState;
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use crate::order_state::items::ItemContentV1::Item;
 
 pub const MAX_SUB_ELEMENTS: usize = 100;
 
@@ -99,9 +99,15 @@ impl ComposableState for ItemsV1 {
                     if incoming.item.version > items_c[pos].item.version {
                         items_c[pos] = incoming.clone();
                     } else if incoming.item.version == items_c[pos].item.version {
-                        return Err(format!("Duplicate item version {:?} for {:?}", incoming.item.version, incoming.item.signed_by))
+                        return Err(format!(
+                            "Duplicate item version {:?} for {:?}",
+                            incoming.item.version, incoming.item.signed_by
+                        ));
                     } else if incoming.item.version < items_c[pos].item.version {
-                        return Err(format!("Lower item version {:?} for {:?}", incoming.item.version, incoming.item.signed_by))
+                        return Err(format!(
+                            "Lower item version {:?} for {:?}",
+                            incoming.item.version, incoming.item.signed_by
+                        ));
                     }
                 } else {
                     // No existing item for this signer – insert
@@ -110,7 +116,10 @@ impl ComposableState for ItemsV1 {
             }
 
             if items_c.len() > MAX_SUB_ELEMENTS {
-                return Err(format!("Has more than allowed {} sub items", MAX_SUB_ELEMENTS));
+                return Err(format!(
+                    "Has more than allowed {} sub items",
+                    MAX_SUB_ELEMENTS
+                ));
             }
 
             self.items = items_c
@@ -139,8 +148,7 @@ pub enum ItemContentV1 {
         /// Price in cents (to avoid floating point issues)
         price_cents: u64,
     },
-    Deleted {
-    }
+    Deleted {},
 }
 
 impl Default for ItemV1 {
@@ -198,7 +206,10 @@ impl AuthorizedItemV1 {
     /// Create an AuthorizedItemV1 with a pre-computed signature.
     /// Use this when signing is done externally (e.g., via delegate).
     pub fn with_signature(message: ItemV1, signature: Signature) -> Self {
-        Self { item: message, signature }
+        Self {
+            item: message,
+            signature,
+        }
     }
 
     pub fn validate(
@@ -249,7 +260,13 @@ mod tests {
             },
         };
         let auth_item_v1 = AuthorizedItemV1::new(item_v1, &user_signing_key);
-        items_state.apply_delta(&parent_state, &parameters, &Some(vec![auth_item_v1.clone()])).unwrap();
+        items_state
+            .apply_delta(
+                &parent_state,
+                &parameters,
+                &Some(vec![auth_item_v1.clone()]),
+            )
+            .unwrap();
 
         assert_eq!(items_state.items.len(), 1);
         assert_eq!(items_state.items[0].item.version, 1);
@@ -266,7 +283,13 @@ mod tests {
             },
         };
         let auth_item_v2 = AuthorizedItemV1::new(item_v2, &user_signing_key);
-        items_state.apply_delta(&parent_state, &parameters, &Some(vec![auth_item_v2.clone()])).unwrap();
+        items_state
+            .apply_delta(
+                &parent_state,
+                &parameters,
+                &Some(vec![auth_item_v2.clone()]),
+            )
+            .unwrap();
 
         assert_eq!(items_state.items.len(), 1);
         assert_eq!(items_state.items[0].item.version, 2);
@@ -277,7 +300,9 @@ mod tests {
         }
 
         // 3. Apply item with version 1 again (should NOT replace)
-        items_state.apply_delta(&parent_state, &parameters, &Some(vec![auth_item_v1])).unwrap();
+        items_state
+            .apply_delta(&parent_state, &parameters, &Some(vec![auth_item_v1]))
+            .unwrap();
         assert_eq!(items_state.items.len(), 1);
         assert_eq!(items_state.items[0].item.version, 2);
     }

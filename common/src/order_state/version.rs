@@ -5,7 +5,7 @@
 //! 2. Reject states from unknown future versions
 //! 3. Perform migration logic if needed
 
-use super::{OrderParametersV1, FullOrderStateV1};
+use super::{FullOrderStateV1, OrderParametersV1};
 use freenet_scaffold::ComposableState;
 use serde::{Deserialize, Serialize};
 
@@ -133,7 +133,7 @@ mod tests {
         let deserialized: StateVersion = serde_json::from_str(&serialized).unwrap();
         assert_eq!(v, deserialized);
     }
-/*
+    /*
     #[test]
     fn test_state_without_version_field_deserializes_with_default() {
         // Simulate a legacy state JSON that doesn't have a version field

@@ -1,11 +1,15 @@
-use dioxus::prelude::*;
+use crate::components::{
+    AdminOrderModal, AdminOrderMode, OrderSettings, OrderSettingsForm, YourOrderSection,
+};
 use crate::services::{BaseService, Contract};
-use crate::components::{YourOrderSection, AdminOrderModal, AdminOrderMode, OrderSettingsForm, OrderSettings};
+use dioxus::prelude::*;
 use ed25519_dalek::VerifyingKey;
-use pizza_common::FullOrderStateV1Delta;
-use pizza_common::order_state::{ItemContentV1, ItemV1, AuthorizedItemV1, Paid, AuthorizedPaidV1, Order, AuthorizedOrderV1};
-use pizza_common::util::format_price_with_currency;
 use futures::StreamExt;
+use pizza_common::order_state::{
+    AuthorizedItemV1, AuthorizedOrderV1, AuthorizedPaidV1, ItemContentV1, ItemV1, Order, Paid,
+};
+use pizza_common::util::format_price_with_currency;
+use pizza_common::FullOrderStateV1Delta;
 
 #[derive(Clone, PartialEq)]
 enum LoadState {
@@ -15,9 +19,7 @@ enum LoadState {
 }
 
 #[component]
-pub fn OrderViewComponent(
-    id: String,
-) -> Element {
+pub fn OrderViewComponent(id: String) -> Element {
     let base = use_context::<BaseService>();
     let sk = base.get_private_key().unwrap();
     let user_vk = base.get_public_key().unwrap();
@@ -99,31 +101,62 @@ pub fn OrderViewComponent(
             let created_at = c.parameters.created_at.to_rfc3339();
             let is_creator = c.parameters.owner == user_vk;
 
-            let total_cents = c.state.items.items.iter().filter_map(|ai| {
-                match &ai.item.content {
+            let total_cents = c
+                .state
+                .items
+                .items
+                .iter()
+                .filter_map(|ai| match &ai.item.content {
                     ItemContentV1::Item { price_cents, .. } => Some(*price_cents),
                     _ => None,
-                }
-            }).sum::<u64>();
+                })
+                .sum::<u64>();
 
-            let paid_cents = c.state.items.items.iter().filter_map(|ai| {
-                match &ai.item.content {
+            let paid_cents = c
+                .state
+                .items
+                .items
+                .iter()
+                .filter_map(|ai| match &ai.item.content {
                     ItemContentV1::Item { price_cents, .. } => {
-                        let paid = c.state.paid.paid.values.get(&ai.item.signed_by).copied().unwrap_or(false);
-                        if paid { Some(*price_cents) } else { None }
+                        let paid = c
+                            .state
+                            .paid
+                            .paid
+                            .values
+                            .get(&ai.item.signed_by)
+                            .copied()
+                            .unwrap_or(false);
+                        if paid {
+                            Some(*price_cents)
+                        } else {
+                            None
+                        }
                     }
                     _ => None,
-                }
-            }).sum::<u64>();
+                })
+                .sum::<u64>();
 
-            let items_vec = c.state.items.items.iter().filter_map(|ai| {
-                match &ai.item.content {
-                    ItemContentV1::Item { display_name, order, price_cents } => {
-                        Some((ai.item.signed_by, display_name.clone(), order.clone(), *price_cents, ai.item.owner_sign))
-                    }
+            let items_vec = c
+                .state
+                .items
+                .items
+                .iter()
+                .filter_map(|ai| match &ai.item.content {
+                    ItemContentV1::Item {
+                        display_name,
+                        order,
+                        price_cents,
+                    } => Some((
+                        ai.item.signed_by,
+                        display_name.clone(),
+                        order.clone(),
+                        *price_cents,
+                        ai.item.owner_sign,
+                    )),
                     _ => None,
-                }
-            }).collect::<Vec<_>>();
+                })
+                .collect::<Vec<_>>();
 
             let handle_update_paid = {
                 let id = id.clone();

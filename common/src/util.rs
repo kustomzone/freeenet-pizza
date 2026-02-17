@@ -220,7 +220,13 @@ pub fn format_price_with_currency(minor_units: u64, currency_code: &str) -> Stri
     // Format with currency symbol
     let symbol = currency.symbol;
     if exponent > 0 {
-        format!("{}{}.{:0width$}", symbol, major, minor, width = exponent as usize)
+        format!(
+            "{}{}.{:0width$}",
+            symbol,
+            major,
+            minor,
+            width = exponent as usize
+        )
     } else {
         format!("{}{}", symbol, major)
     }

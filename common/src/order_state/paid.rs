@@ -1,12 +1,12 @@
-use std::collections::HashMap;
+use crate::order_state::OrderParametersV1;
 use crate::util::truncated_base64;
 use crate::{FullOrderStateV1, UserId};
 use ed25519_dalek::{Signature, SignatureError, Signer, SigningKey, Verifier, VerifyingKey};
 use freenet_scaffold::util::{fast_hash, FastHash};
 use freenet_scaffold::ComposableState;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fmt;
-use crate::order_state::OrderParametersV1;
 
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
 pub struct AuthorizedPaidV1 {
@@ -79,8 +79,7 @@ impl ComposableState for AuthorizedPaidV1 {
                 .map_err(|e| format!("Invalid signature: {}", e))?;
 
             // Check if the new version is greater than the current version
-            if delta.paid.paid_version <= self.paid.paid_version
-            {
+            if delta.paid.paid_version <= self.paid.paid_version {
                 return Err(
                     "New configuration version must be greater than the current version"
                         .to_string(),
@@ -118,19 +117,13 @@ impl AuthorizedPaidV1 {
             .expect("Serialization should not fail");
         let signature = owner_signing_key.sign(&serialized_paid);
 
-        Self {
-            paid,
-            signature,
-        }
+        Self { paid, signature }
     }
 
     /// Create an AuthorizedPaidV1 with a pre-computed signature.
     /// Use this when signing is done externally (e.g., via delegate).
     pub fn with_signature(paid: Paid, signature: Signature) -> Self {
-        Self {
-            paid,
-            signature,
-        }
+        Self { paid, signature }
     }
 
     pub fn verify_signature(
@@ -186,7 +179,7 @@ pub struct Paid {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::order_state::items::{AuthorizedItemV1, ItemV1, ItemContentV1};
+    use crate::order_state::items::{AuthorizedItemV1, ItemContentV1, ItemV1};
     use crate::order_state::OrderParametersV1;
     use chrono::Utc;
     use ed25519_dalek::SigningKey;
@@ -197,7 +190,7 @@ mod tests {
         let mut rng = OsRng;
         let owner_signing_key = SigningKey::generate(&mut rng);
         let owner_verifying_key = owner_signing_key.verifying_key();
-        
+
         let user_signing_key = SigningKey::generate(&mut rng);
         let user_id = user_signing_key.verifying_key();
 
@@ -207,7 +200,7 @@ mod tests {
         };
 
         let mut parent_state = FullOrderStateV1::default();
-        
+
         // 1. Test: Paid entry with no corresponding item should fail
         let mut paid_values = HashMap::new();
         paid_values.insert(user_id, true);
@@ -219,7 +212,9 @@ mod tests {
 
         let result = auth_paid.verify(&parent_state, &parameters);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("has a paid entry but no corresponding item"));
+        assert!(result
+            .unwrap_err()
+            .contains("has a paid entry but no corresponding item"));
 
         // 2. Test: Paid entry WITH corresponding item should pass
         let item = ItemV1 {
@@ -237,7 +232,7 @@ mod tests {
 
         let result = auth_paid.verify(&parent_state, &parameters);
         assert!(result.is_ok());
-        
+
         // 3. Test: apply_delta should also fail if item is missing
         let empty_parent_state = FullOrderStateV1::default();
         let mut current_paid = AuthorizedPaidV1::default();

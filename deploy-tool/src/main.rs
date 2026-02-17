@@ -1,10 +1,10 @@
-use std::convert::Into;
-use std::{env, fs, io};
-use std::error::Error;
+use byteorder::{BigEndian, WriteBytesExt};
 use clap::{Parser, Subcommand};
+use std::convert::Into;
+use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use byteorder::{BigEndian, WriteBytesExt};
+use std::{env, fs, io};
 use tar::Builder;
 
 macro_rules! println {
@@ -21,7 +21,6 @@ fn default_storage_path(file: &str) -> PathBuf {
     p.push(file);
     p
 }
-
 
 #[derive(Parser)]
 #[command(name = "deploy-tool")]
@@ -44,7 +43,7 @@ enum Commands {
     /// Initial deployment of the webapp
     InitialWebDeploy {},
     /// Get web contract id
-    GetWebContractId {}
+    GetWebContractId {},
 }
 
 fn execute(cmd: &mut Command) -> Result<(), Box<dyn Error>> {
@@ -78,7 +77,14 @@ fn cargo_bin_or_path(cmd: &str, pkg: &str) -> String {
 
 fn cargo_build(package: &str) -> Result<(), Box<dyn Error>> {
     println!("Building package: {}", package);
-    let args = vec!["build", "--release", "--target", "wasm32-unknown-unknown", "--package", package];
+    let args = vec![
+        "build",
+        "--release",
+        "--target",
+        "wasm32-unknown-unknown",
+        "--package",
+        package,
+    ];
     execute(Command::new("cargo").args(args))
 }
 
@@ -88,35 +94,31 @@ fn web_container_sign(
     parameters: PathBuf,
     version: u32,
 ) -> Result<(), Box<dyn Error>> {
-    println!("Signing web container: {} -> {}", input.display(), output.display());
-    execute(Command::new("cargo")
-        .args([
-            "run",
-            "--bin",
-            "web-container-tool",
-            "--",
-            "sign",
-            "--input",
-            &input.to_string_lossy(),
-            "--output",
-            &output.to_string_lossy(),
-            "--parameters",
-            &parameters.to_string_lossy(),
-            "--version",
-            &version.to_string(),
-        ]))
+    println!(
+        "Signing web container: {} -> {}",
+        input.display(),
+        output.display()
+    );
+    execute(Command::new("cargo").args([
+        "run",
+        "--bin",
+        "web-container-tool",
+        "--",
+        "sign",
+        "--input",
+        &input.to_string_lossy(),
+        "--output",
+        &output.to_string_lossy(),
+        "--parameters",
+        &parameters.to_string_lossy(),
+        "--version",
+        &version.to_string(),
+    ]))
 }
 
 fn web_container_generate() -> Result<(), Box<dyn Error>> {
     println!("Generating web container keys...");
-    execute(Command::new("cargo")
-        .args([
-            "run",
-            "--bin",
-            "web-container-tool",
-            "--",
-            "generate",
-        ]))
+    execute(Command::new("cargo").args(["run", "--bin", "web-container-tool", "--", "generate"]))
 }
 
 fn fdev_publish(
@@ -125,17 +127,16 @@ fn fdev_publish(
     state: PathBuf,
 ) -> Result<(), Box<dyn Error>> {
     println!("Publishing contract...");
-    execute(Command::new(cargo_bin_or_path("fdev", "fdev"))
-        .args([
-            "publish",
-            "--code",
-            &contract_wasm.to_string_lossy(),
-            "--parameters",
-            &webapp_parameters.to_string_lossy(),
-            "contract",
-            "--state",
-            &state.to_string_lossy(),
-        ]))
+    execute(Command::new(cargo_bin_or_path("fdev", "fdev")).args([
+        "publish",
+        "--code",
+        &contract_wasm.to_string_lossy(),
+        "--parameters",
+        &webapp_parameters.to_string_lossy(),
+        "contract",
+        "--state",
+        &state.to_string_lossy(),
+    ]))
 }
 
 fn find_public_dir(root: &Path) -> io::Result<Option<PathBuf>> {
@@ -168,25 +169,24 @@ fn build_dx_app(
 ) -> Result<PathBuf, Box<dyn Error>> {
     println!("Building app...");
 
-    let contract_id = fdev_get_contract_id(
-        contract_wasm,
-        webapp_parameters,
-    )?;
+    let contract_id = fdev_get_contract_id(contract_wasm, webapp_parameters)?;
 
     let temp_dir = env::temp_dir();
 
     println!("temp {:?}", temp_dir);
 
-    execute(Command::new(cargo_bin_or_path("dx", "dioxus-cli"))
-        .env("CARGO_TARGET_DIR", &temp_dir)
-        .args([
-            "build",
-            "--package",
-            package,
-            "--base-path",
-            format!("/v1/contract/web/{}/", contract_id).as_str(),
-            "--release",
-        ]))?;
+    execute(
+        Command::new(cargo_bin_or_path("dx", "dioxus-cli"))
+            .env("CARGO_TARGET_DIR", &temp_dir)
+            .args([
+                "build",
+                "--package",
+                package,
+                "--base-path",
+                format!("/v1/contract/web/{}/", contract_id).as_str(),
+                "--release",
+            ]),
+    )?;
 
     let public_dir = find_public_dir(&temp_dir)?.expect("public path");
 
@@ -212,7 +212,7 @@ fn fdev_get_contract_id(
             "Command failed: {}",
             String::from_utf8_lossy(&output.stderr)
         )
-            .into());
+        .into());
     }
 
     let contract_id = String::from_utf8(output.stdout)?.trim().to_string();
@@ -257,11 +257,7 @@ fn deploy(version: u32) -> Result<(), Box<dyn Error>> {
     let version_parsed: u32 = version_saved.parse().unwrap();
     let version_chosen = std::cmp::max(version_parsed, version);
 
-    let out = build_dx_app(
-        contract_wasm.clone(),
-        webapp_parameters.clone(),
-        "pizza-ui"
-    )?;
+    let out = build_dx_app(contract_wasm.clone(), webapp_parameters.clone(), "pizza-ui")?;
 
     // Create the tar.xz archive
     let file = std::fs::File::create(&webapp_archive)?;
@@ -276,19 +272,18 @@ fn deploy(version: u32) -> Result<(), Box<dyn Error>> {
         webapp_archive.clone(),
         webapp_metadata.clone(),
         webapp_parameters.clone(),
-        version_chosen.clone()
+        version_chosen.clone(),
     )?;
 
     let state_path = default_storage_path("webapp.state");
     merge_state(&webapp_metadata, &webapp_archive, &state_path)?;
 
-    fdev_publish(
-        contract_wasm,
-        webapp_parameters,
-        state_path,
-    )?;
+    fdev_publish(contract_wasm, webapp_parameters, state_path)?;
 
-    fs::write(default_storage_path("version"), (version_chosen + 1).to_string())?;
+    fs::write(
+        default_storage_path("version"),
+        (version_chosen + 1).to_string(),
+    )?;
 
     Ok(())
 }
@@ -304,7 +299,8 @@ fn initial_web_deploy() -> Result<(), Box<dyn Error>> {
 
     cargo_build("web-container-contract")?;
 
-    let contract_wasm_src = PathBuf::from("target/wasm32-unknown-unknown/release/web_container_contract.wasm");
+    let contract_wasm_src =
+        PathBuf::from("target/wasm32-unknown-unknown/release/web_container_contract.wasm");
     let contract_wasm = default_storage_path("web.contract.wasm");
     std::fs::copy(contract_wasm_src, &contract_wasm)?;
     let webapp_archive = default_storage_path("webapp.bootstrap.tar.xz");
@@ -327,17 +323,13 @@ fn initial_web_deploy() -> Result<(), Box<dyn Error>> {
         webapp_archive.clone(),
         webapp_metadata.clone(),
         webapp_parameters.clone(),
-        1
+        1,
     )?;
 
     let state_path = default_storage_path("webapp.state");
     merge_state(&webapp_metadata, &webapp_archive, &state_path)?;
 
-    fdev_publish(
-        contract_wasm,
-        webapp_parameters,
-        state_path,
-    )?;
+    fdev_publish(contract_wasm, webapp_parameters, state_path)?;
 
     Ok(())
 }
@@ -346,10 +338,7 @@ fn get_web_contract_id() -> Result<(), Box<dyn Error>> {
     let contract_wasm = default_storage_path("web.contract.wasm");
     let webapp_parameters = default_storage_path("webapp.parameters");
 
-    let contract_id = fdev_get_contract_id(
-        contract_wasm,
-        webapp_parameters,
-    )?;
+    let contract_id = fdev_get_contract_id(contract_wasm, webapp_parameters)?;
 
     println!("{}", contract_id);
 

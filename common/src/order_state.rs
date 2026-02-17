@@ -1,15 +1,15 @@
-mod order;
 mod items;
-mod version;
+mod order;
 mod paid;
+mod version;
 
 // Re-export commonly used types
+pub use items::{AuthorizedItemV1, ItemContentV1, ItemV1, ItemsV1};
 pub use order::{AuthorizedOrderV1, Order};
-pub use items::{ItemsV1, AuthorizedItemV1, ItemV1, ItemContentV1};
 pub use paid::{AuthorizedPaidV1, Paid};
 
-use chrono::{DateTime, Utc};
 use crate::order_state::version::StateVersion;
+use chrono::{DateTime, Utc};
 
 use ed25519_dalek::VerifyingKey;
 use freenet_scaffold_macro::composable;
@@ -39,9 +39,9 @@ pub struct OrderParametersV1 {
 mod tests {
     use super::*;
     use crate::order_state::order::Order;
+    use crate::order_state::paid::{AuthorizedPaidV1, Paid};
     use ed25519_dalek::SigningKey;
     use std::fmt::Debug;
-    use crate::order_state::paid::{AuthorizedPaidV1, Paid};
 
     #[test]
     fn test_state() {
@@ -123,7 +123,7 @@ mod tests {
             owner_signing_key,
         )
     }
-/*
+    /*
     #[test]
     fn test_state_with_none_deltas() {
         let (state, parameters, owner_signing_key) = create_empty_chat_room_state();

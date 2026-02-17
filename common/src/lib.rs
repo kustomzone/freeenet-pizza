@@ -1,6 +1,6 @@
-pub mod util;
-pub mod order_state;
 pub mod order_delegate;
+pub mod order_state;
+pub mod util;
 
 pub use freenet_scaffold::ComposableState;
 pub use order_state::*;

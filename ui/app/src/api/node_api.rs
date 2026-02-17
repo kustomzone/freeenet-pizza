@@ -213,7 +213,11 @@ pub fn notify_contract_update(key: &str, state: &FullOrderStateV1, params: &Orde
     CONTRACT_UPDATE_SENDERS.with(|senders| {
         let mut senders = senders.borrow_mut();
         if let Some(list) = senders.get_mut(key) {
-            list.retain(|sender| sender.unbounded_send((state.clone(), params.clone())).is_ok());
+            list.retain(|sender| {
+                sender
+                    .unbounded_send((state.clone(), params.clone()))
+                    .is_ok()
+            });
         }
     });
 }
@@ -335,9 +339,8 @@ pub fn connect_node_api(config: &NodeConfig) {
         flush_pending_requests(&ws_for_open.borrow());
 
         // Re-subscribe to all tracked subscriptions
-        let subscribed_keys: Vec<String> = SUBSCRIBED_CONTRACTS.with(|subs| {
-            subs.borrow().iter().cloned().collect()
-        });
+        let subscribed_keys: Vec<String> =
+            SUBSCRIBED_CONTRACTS.with(|subs| subs.borrow().iter().cloned().collect());
 
         let contracts = CONTRACTS.read();
         for key_str in subscribed_keys {
@@ -358,7 +361,7 @@ pub fn connect_node_api(config: &NodeConfig) {
     ws.set_onopen(Some(onopen.as_ref().unchecked_ref()));
     onopen.forget();
 
-        let onmessage = Closure::<dyn FnMut(MessageEvent)>::new(move |e: MessageEvent| {
+    let onmessage = Closure::<dyn FnMut(MessageEvent)>::new(move |e: MessageEvent| {
         let data = e.data();
         if let Ok(abuf) = data.dyn_into::<js_sys::ArrayBuffer>() {
             let bytes = js_sys::Uint8Array::new(&abuf).to_vec();
@@ -737,8 +740,9 @@ fn handle_update_notification(key: ContractKey, update: UpdateData<'static>) {
                 if delta_bytes.as_ref().is_empty() {
                     return;
                 }
-                match from_reader::<pizza_common::FullOrderStateV1Delta, &[u8]>(delta_bytes.as_ref())
-                {
+                match from_reader::<pizza_common::FullOrderStateV1Delta, &[u8]>(
+                    delta_bytes.as_ref(),
+                ) {
                     Ok(delta) => {
                         let mut new_state = current_state.clone();
                         if let Err(e) = pizza_common::ComposableState::apply_delta(
@@ -904,10 +908,7 @@ pub fn subscribe_to_contract_async(
         info!("Subscribing to contract: {}", contract_key_str);
         Some(response_rx)
     } else {
-        error!(
-            "Cannot subscribe to unknown contract: {}",
-            contract_key_str
-        );
+        error!("Cannot subscribe to unknown contract: {}", contract_key_str);
         None
     }
 }
@@ -971,13 +972,15 @@ pub fn send_contract_delta_async(
 // ============================================================================
 
 /// Get contract from local cache (synchronous, reads from cache only)
-pub fn get_contract_state_cached(contract_key: &str) -> Option<(FullOrderStateV1, OrderParametersV1)> {
+pub fn get_contract_state_cached(
+    contract_key: &str,
+) -> Option<(FullOrderStateV1, OrderParametersV1)> {
     let contracts = CONTRACTS.read();
-    contracts
-        .get(contract_key)
-        .map(|(state, params, _): &(FullOrderStateV1, OrderParametersV1, ContractKey)| {
+    contracts.get(contract_key).map(
+        |(state, params, _): &(FullOrderStateV1, OrderParametersV1, ContractKey)| {
             (state.clone(), params.clone())
-        })
+        },
+    )
 }
 
 /// Get all contract keys (synchronous, reads from cache)
@@ -1010,7 +1013,11 @@ pub fn get_contract_state_async(
         if !contracts.contains_key(contract_key_str) {
             contracts.insert(
                 contract_key_str.to_string(),
-                (FullOrderStateV1::default(), params.clone(), contract_key.clone()),
+                (
+                    FullOrderStateV1::default(),
+                    params.clone(),
+                    contract_key.clone(),
+                ),
             );
         }
     }
@@ -1062,12 +1069,12 @@ pub fn get_contract_by_key_async(contract_key_str: &str) -> Option<oneshot::Rece
 /// This requests the contract code to get the parameters.
 /// Use this when visiting an order page for a contract we don't know about.
 pub fn fetch_unknown_contract_async(contract_key_str: &str) -> oneshot::Receiver<GetResponse> {
-    use std::str::FromStr;
     use freenet_stdlib::prelude::ContractInstanceId;
+    use std::str::FromStr;
 
     // Parse the contract key string to ContractInstanceId
-    let contract_id = ContractInstanceId::from_str(contract_key_str)
-        .expect("Invalid contract key string");
+    let contract_id =
+        ContractInstanceId::from_str(contract_key_str).expect("Invalid contract key string");
 
     // Register pending request
     let response_rx = register_pending_get(contract_key_str);

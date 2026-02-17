@@ -2,13 +2,13 @@
 //!
 //! A Dioxus-based frontend for managing collaborative pizza orders on Freenet.
 
-mod components;
-mod app;
-mod services;
 mod api;
+mod app;
+mod components;
+mod services;
 
-use std::rc::Rc;
 use dioxus::prelude::*;
+use std::rc::Rc;
 
 fn main() {
     // Set up logging and panic hook for WASM

@@ -61,7 +61,11 @@ pub trait BaseInterface {
     /// Publish a delta update to a contract.
     ///
     /// Returns a future that resolves when the network acknowledges the update.
-    fn publish_delta(&self, id: String, delta: FullOrderStateV1Delta) -> AsyncResult<PublishDeltaResponse>;
+    fn publish_delta(
+        &self,
+        id: String,
+        delta: FullOrderStateV1Delta,
+    ) -> AsyncResult<PublishDeltaResponse>;
 
     /// Returns the public key (verifying key).
     fn get_public_key(&self) -> Result<VerifyingKey, Box<dyn Error>>;

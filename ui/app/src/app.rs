@@ -1,13 +1,15 @@
-use std::collections::HashMap;
 use dioxus::prelude::*;
+use std::collections::HashMap;
 
-use crate::components::{NewOrderDialog, OrderViewComponent, Sidebar, OrderSettings};
-use pizza_common::order_state::*;
+use crate::api::{
+    connect_node_api, get_auth_token_from_window, NodeConfig, AUTH_TOKEN, NODE_HTTP_BASE,
+};
+use crate::components::{NewOrderDialog, OrderSettings, OrderViewComponent, Sidebar};
+pub(crate) use crate::services::{BaseService, Contract, FreenetService};
 use chrono::Utc;
-pub(crate) use crate::services::{FreenetService, BaseService, Contract};
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use futures::{FutureExt, StreamExt};
-use crate::api::{get_auth_token_from_window, NodeConfig, connect_node_api, NODE_HTTP_BASE, AUTH_TOKEN};
+use pizza_common::order_state::*;
 
 #[derive(Clone, Routable, Debug, PartialEq)]
 #[rustfmt::skip]
@@ -39,7 +41,8 @@ pub fn App() -> Element {
     use_effect(|| {
         let api_url = NODE_HTTP_BASE.read().clone();
         let auth_token = AUTH_TOKEN.read().clone();
-        let api_url = api_url.replace("http", "ws") + "/v1/contract/command?encodingProtocol=native";
+        let api_url =
+            api_url.replace("http", "ws") + "/v1/contract/command?encodingProtocol=native";
         connect_node_api(&NodeConfig { api_url });
     });
 
@@ -130,10 +133,13 @@ fn AppContent() -> Element {
                         // Fetch new contract (tries cache first, then network)
                         if let Ok(contract) = base.get_contract(id.clone()).await {
                             let vk = contract.parameters.owner;
-                            current_contracts.insert(id.clone(), Contract {
-                                state: contract.state,
-                                parameters: contract.parameters,
-                            });
+                            current_contracts.insert(
+                                id.clone(),
+                                Contract {
+                                    state: contract.state,
+                                    parameters: contract.parameters,
+                                },
+                            );
                             changed = true;
 
                             // Subscribe to state updates for the new contract

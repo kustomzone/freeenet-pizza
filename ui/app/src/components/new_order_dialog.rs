@@ -1,6 +1,6 @@
+use crate::components::{OrderSettings, OrderSettingsForm};
 use dioxus::prelude::*;
 use ed25519_dalek::SigningKey;
-use crate::components::{OrderSettingsForm, OrderSettings};
 
 #[component]
 pub fn NewOrderDialog(

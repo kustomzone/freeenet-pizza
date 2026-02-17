@@ -1,10 +1,10 @@
+use crate::services::BaseService;
 use dioxus::prelude::*;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use log::info;
-use pizza_common::FullOrderStateV1Delta;
-use pizza_common::order_state::{ItemContentV1, ItemV1, AuthorizedItemV1};
+use pizza_common::order_state::{AuthorizedItemV1, ItemContentV1, ItemV1};
 use pizza_common::util::{format_price_with_currency, parse_price};
-use crate::services::BaseService;
+use pizza_common::FullOrderStateV1Delta;
 
 #[derive(Clone, PartialEq)]
 pub enum AdminOrderMode {
@@ -29,9 +29,17 @@ pub fn AdminOrderModal(
 
     let (is_edit, initial_name, initial_order, initial_price) = match &mode {
         AdminOrderMode::Add => (false, String::new(), String::new(), String::new()),
-        AdminOrderMode::Edit { initial_name, initial_order, initial_price, .. } => {
-            (true, initial_name.clone(), initial_order.clone(), format_price_with_currency(*initial_price, &currency))
-        }
+        AdminOrderMode::Edit {
+            initial_name,
+            initial_order,
+            initial_price,
+            ..
+        } => (
+            true,
+            initial_name.clone(),
+            initial_order.clone(),
+            format_price_with_currency(*initial_price, &currency),
+        ),
     };
 
     let mut display_name = use_signal(|| initial_name);
@@ -39,7 +47,11 @@ pub fn AdminOrderModal(
     let mut price_input = use_signal(|| initial_price);
     let mut price_error = use_signal(|| Option::<String>::None);
 
-    let title = if is_edit { "Edit Order" } else { "Add Order (Admin)" };
+    let title = if is_edit {
+        "Edit Order"
+    } else {
+        "Add Order (Admin)"
+    };
     let submit_label = if is_edit { "Save Changes" } else { "Add Order" };
 
     let handle_submit = {
@@ -101,7 +113,13 @@ pub fn AdminOrderModal(
                     };
 
                     // Find the existing item
-                    let existing = match current_state.state.items.items.iter().find(|it| it.item.signed_by == target_vk) {
+                    let existing = match current_state
+                        .state
+                        .items
+                        .items
+                        .iter()
+                        .find(|it| it.item.signed_by == target_vk)
+                    {
                         Some(e) => e,
                         None => {
                             info!("AdminOrderModal: existing item not found");

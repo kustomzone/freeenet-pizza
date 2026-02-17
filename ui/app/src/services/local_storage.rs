@@ -32,8 +32,7 @@ fn js_to_err(js: JsValue) -> Box<dyn Error> {
 #[derive(Clone)]
 pub struct LocalStorageService {
     storage: Storage,
-    contract_subscribers:
-        Arc<Mutex<Vec<futures::channel::mpsc::UnboundedSender<Vec<String>>>>>,
+    contract_subscribers: Arc<Mutex<Vec<futures::channel::mpsc::UnboundedSender<Vec<String>>>>>,
     state_subscribers:
         Arc<Mutex<HashMap<String, Vec<futures::channel::mpsc::UnboundedSender<Contract>>>>>,
 }
@@ -96,14 +95,8 @@ impl BaseInterface for LocalStorageService {
     }
 
     fn get_contract_cached(&self, id: String) -> Option<Contract> {
-        let state_json = self
-            .storage
-            .get_item(&Self::get_state_key(&id))
-            .ok()??;
-        let params_json = self
-            .storage
-            .get_item(&Self::get_params_key(&id))
-            .ok()??;
+        let state_json = self.storage.get_item(&Self::get_state_key(&id)).ok()??;
+        let params_json = self.storage.get_item(&Self::get_params_key(&id)).ok()??;
 
         let state: FullOrderStateV1 = serde_json::from_str(&state_json).ok()?;
         let params: OrderParametersV1 = serde_json::from_str(&params_json).ok()?;
@@ -201,9 +194,7 @@ impl BaseInterface for LocalStorageService {
         match self.storage.get_item(PRIVATE_KEY_KEY).map_err(js_to_err)? {
             Some(s) => {
                 let bytes = hex::decode(s)?;
-                let bytes: [u8; 32] = bytes
-                    .try_into()
-                    .map_err(|_| "invalid private key length")?;
+                let bytes: [u8; 32] = bytes.try_into().map_err(|_| "invalid private key length")?;
                 Ok(SigningKey::from_bytes(&bytes))
             }
             None => {

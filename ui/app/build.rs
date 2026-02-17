@@ -43,14 +43,17 @@ fn main() {
     match status {
         Ok(s) if s.success() => {
             // Copy the WASM file to the build directory
-            let wasm_src = project_root
-                .join("target/wasm32-unknown-unknown/release/pizza_contract.wasm");
+            let wasm_src =
+                project_root.join("target/wasm32-unknown-unknown/release/pizza_contract.wasm");
             let wasm_dst = build_dir.join("pizza_contract.wasm");
             println!("cargo:warning=Contract built at {:?}", wasm_src);
 
             if wasm_src.exists() {
                 fs::copy(&wasm_src, &wasm_dst).expect("Failed to copy WASM file");
-                println!("cargo:warning=Contract WASM built successfully at {:?}", wasm_dst);
+                println!(
+                    "cargo:warning=Contract WASM built successfully at {:?}",
+                    wasm_dst
+                );
             } else {
                 // Create a placeholder file for initial compilation
                 create_placeholder_wasm(&wasm_dst);
@@ -61,7 +64,10 @@ fn main() {
             create_placeholder_wasm(&build_dir.join("pizza_contract.wasm"));
         }
         Err(e) => {
-            eprintln!("cargo:warning=Could not run cargo for contract build: {}", e);
+            eprintln!(
+                "cargo:warning=Could not run cargo for contract build: {}",
+                e
+            );
             create_placeholder_wasm(&build_dir.join("pizza_contract.wasm"));
         }
     }

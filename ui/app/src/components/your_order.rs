@@ -1,9 +1,9 @@
-use dioxus::prelude::*;
 use crate::services::{BaseService, Contract};
+use dioxus::prelude::*;
 use ed25519_dalek::{SigningKey, VerifyingKey};
-use pizza_common::FullOrderStateV1Delta;
-use pizza_common::order_state::{ItemContentV1, ItemV1, AuthorizedItemV1};
+use pizza_common::order_state::{AuthorizedItemV1, ItemContentV1, ItemV1};
 use pizza_common::util::{format_price_with_currency, parse_price};
+use pizza_common::FullOrderStateV1Delta;
 
 #[component]
 pub fn YourOrderSection(
@@ -26,9 +26,11 @@ pub fn YourOrderSection(
     let user_item = contract.state.items.items.iter().find_map(|ai| {
         if ai.item.signed_by == user_vk {
             match &ai.item.content {
-                ItemContentV1::Item { display_name, order, price_cents } => {
-                    Some((display_name.clone(), order.clone(), *price_cents))
-                }
+                ItemContentV1::Item {
+                    display_name,
+                    order,
+                    price_cents,
+                } => Some((display_name.clone(), order.clone(), *price_cents)),
                 _ => None,
             }
         } else {
@@ -63,7 +65,11 @@ pub fn YourOrderSection(
             let user_key = sk.clone();
             let user_vk_val = user_key.verifying_key();
 
-            let next_version = contract.state.items.items.iter()
+            let next_version = contract
+                .state
+                .items
+                .items
+                .iter()
                 .find(|it| it.item.signed_by == user_vk_val)
                 .map(|it| it.item.version + 1)
                 .unwrap_or(1);
@@ -120,12 +126,18 @@ pub fn YourOrderSection(
             let user_key = sk.clone();
             let user_vk_val = user_key.verifying_key();
 
-            if let Some(pos) = contract.state.items.items.iter().position(|it| it.item.signed_by == user_vk_val) {
+            if let Some(pos) = contract
+                .state
+                .items
+                .items
+                .iter()
+                .position(|it| it.item.signed_by == user_vk_val)
+            {
                 let existing = &contract.state.items.items[pos];
-                
+
                 let mut final_dn = dn;
                 let mut final_ot = ot;
-                
+
                 if final_dn.is_empty() {
                     if let ItemContentV1::Item { display_name, .. } = &existing.item.content {
                         final_dn = display_name.clone();
@@ -171,7 +183,13 @@ pub fn YourOrderSection(
         move || {
             let user_vk_val = user_vk;
             let owner_sk = sk.clone();
-            if let Some(item) = contract.state.items.items.iter().find(|it| it.item.signed_by == user_vk_val) {
+            if let Some(item) = contract
+                .state
+                .items
+                .items
+                .iter()
+                .find(|it| it.item.signed_by == user_vk_val)
+            {
                 let new_item = ItemV1 {
                     signed_by: item.item.signed_by,
                     owner_sign: false,

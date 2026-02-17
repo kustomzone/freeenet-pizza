@@ -86,9 +86,7 @@ impl ContractInterface for WebContainerContract {
 
         verifying_key
             .verify_strict(&message, &metadata.signature)
-            .map_err(|e| {
-                ContractError::Other(format!("Signature verification failed: {}", e))
-            })?;
+            .map_err(|e| ContractError::Other(format!("Signature verification failed: {}", e)))?;
 
         Ok(ValidateResult::Valid)
     }
@@ -102,29 +100,29 @@ impl ContractInterface for WebContainerContract {
             0
         } else {
             let mut cursor = Cursor::new(state.as_ref());
-            let metadata_size = cursor
-                .read_u64::<BigEndian>()
-                .map_err(|e| ContractError::Other(format!("Failed to read metadata size: {}", e)))?;
+            let metadata_size = cursor.read_u64::<BigEndian>().map_err(|e| {
+                ContractError::Other(format!("Failed to read metadata size: {}", e))
+            })?;
             let mut metadata_bytes = vec![0; metadata_size as usize];
             cursor
                 .read_exact(&mut metadata_bytes)
                 .map_err(|e| ContractError::Other(format!("Failed to read metadata: {}", e)))?;
-            let metadata: WebContainerMetadata =
-                from_reader(&metadata_bytes[..]).map_err(|e| ContractError::Deser(e.to_string()))?;
+            let metadata: WebContainerMetadata = from_reader(&metadata_bytes[..])
+                .map_err(|e| ContractError::Deser(e.to_string()))?;
             metadata.version
         };
 
         if let Some(UpdateData::State(new_state)) = data.into_iter().next() {
             let mut cursor = Cursor::new(new_state.as_ref());
-            let metadata_size = cursor
-                .read_u64::<BigEndian>()
-                .map_err(|e| ContractError::Other(format!("Failed to read metadata size: {}", e)))?;
+            let metadata_size = cursor.read_u64::<BigEndian>().map_err(|e| {
+                ContractError::Other(format!("Failed to read metadata size: {}", e))
+            })?;
             let mut metadata_bytes = vec![0; metadata_size as usize];
             cursor
                 .read_exact(&mut metadata_bytes)
                 .map_err(|e| ContractError::Other(format!("Failed to read metadata: {}", e)))?;
-            let metadata: WebContainerMetadata =
-                from_reader(&metadata_bytes[..]).map_err(|e| ContractError::Deser(e.to_string()))?;
+            let metadata: WebContainerMetadata = from_reader(&metadata_bytes[..])
+                .map_err(|e| ContractError::Deser(e.to_string()))?;
 
             if metadata.version <= current_version {
                 return Err(ContractError::InvalidUpdateWithInfo {
@@ -178,15 +176,15 @@ impl ContractInterface for WebContainerContract {
 
         let current_version = {
             let mut cursor = Cursor::new(state.as_ref());
-            let metadata_size = cursor
-                .read_u64::<BigEndian>()
-                .map_err(|e| ContractError::Other(format!("Failed to read metadata size: {}", e)))?;
+            let metadata_size = cursor.read_u64::<BigEndian>().map_err(|e| {
+                ContractError::Other(format!("Failed to read metadata size: {}", e))
+            })?;
             let mut metadata_bytes = vec![0; metadata_size as usize];
             cursor
                 .read_exact(&mut metadata_bytes)
                 .map_err(|e| ContractError::Other(format!("Failed to read metadata: {}", e)))?;
-            let metadata: WebContainerMetadata =
-                from_reader(&metadata_bytes[..]).map_err(|e| ContractError::Deser(e.to_string()))?;
+            let metadata: WebContainerMetadata = from_reader(&metadata_bytes[..])
+                .map_err(|e| ContractError::Deser(e.to_string()))?;
             metadata.version
         };
 
@@ -291,6 +289,9 @@ mod tests {
             State::from(current),
             vec![UpdateData::State(State::from(update))],
         );
-        assert!(matches!(result, Err(ContractError::InvalidUpdateWithInfo { .. })));
+        assert!(matches!(
+            result,
+            Err(ContractError::InvalidUpdateWithInfo { .. })
+        ));
     }
 }

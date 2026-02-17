@@ -18,8 +18,8 @@ use super::base::{
     AsyncResult, BaseInterface, Contract, PublishContractResponse, PublishDeltaResponse,
 };
 use crate::api::node_api::{
-    get_contract_keys, get_contract_state_cached, get_contract_by_key_async,
-    fetch_unknown_contract_async, notify_contract_update, notify_contract_list_change,
+    fetch_unknown_contract_async, get_contract_by_key_async, get_contract_keys,
+    get_contract_state_cached, notify_contract_list_change, notify_contract_update,
     publish_contract_async, send_contract_delta_async, subscribe_to_contract_async,
     subscribe_to_contract_list, subscribe_to_contract_updates, CONTRACTS,
 };
@@ -58,7 +58,10 @@ impl FreenetService {
 
         let signing_key = Self::load_or_create_signing_key(&storage)?;
 
-        Ok(Self { signing_key, storage })
+        Ok(Self {
+            signing_key,
+            storage,
+        })
     }
 
     /// Load the signing key from browser storage or create a new one.
@@ -69,9 +72,7 @@ impl FreenetService {
         {
             Some(hex_key) => {
                 let bytes = hex::decode(hex_key)?;
-                let bytes: [u8; 32] = bytes
-                    .try_into()
-                    .map_err(|_| "invalid private key length")?;
+                let bytes: [u8; 32] = bytes.try_into().map_err(|_| "invalid private key length")?;
                 Ok(SigningKey::from_bytes(&bytes))
             }
             None => {
@@ -93,7 +94,6 @@ impl FreenetService {
             _ => Vec::new(),
         }
     }
-
 }
 
 /// Static helper to save a contract key to localStorage (for use in async blocks).
@@ -158,7 +158,10 @@ impl BaseInterface for FreenetService {
                         Ok(response) => {
                             if let Some(state) = response.state {
                                 // Get params from cache (they don't change)
-                                return Ok(Contract { state, parameters: params });
+                                return Ok(Contract {
+                                    state,
+                                    parameters: params,
+                                });
                             }
                         }
                         Err(_) => {
@@ -167,7 +170,10 @@ impl BaseInterface for FreenetService {
                     }
                 }
                 // Return cached state if network request failed
-                return Ok(Contract { state, parameters: params });
+                return Ok(Contract {
+                    state,
+                    parameters: params,
+                });
             }
 
             // Contract not in cache - fetch from network (includes params in contract container)
@@ -184,7 +190,10 @@ impl BaseInterface for FreenetService {
                             // Subscribe to updates for this newly fetched contract
                             let _ = subscribe_to_contract_async(&id);
 
-                            return Ok(Contract { state, parameters: params });
+                            return Ok(Contract {
+                                state,
+                                parameters: params,
+                            });
                         }
                     }
                 }
@@ -229,7 +238,10 @@ impl BaseInterface for FreenetService {
             // Update local state optimistically
             {
                 let mut contracts = CONTRACTS.write();
-                contracts.insert(id.clone(), (new_state.clone(), params.clone(), contract_key));
+                contracts.insert(
+                    id.clone(),
+                    (new_state.clone(), params.clone(), contract_key),
+                );
             }
 
             // Notify subscribers of the optimistic update

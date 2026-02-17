@@ -68,7 +68,9 @@ fn generate_keys(output_path: Option<String>) -> Result<(), Box<dyn std::error::
         verifying_key = vk_str
     };
 
-    let path = output_path.map(PathBuf::from).unwrap_or_else(default_keys_path);
+    let path = output_path
+        .map(PathBuf::from)
+        .unwrap_or_else(default_keys_path);
 
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
@@ -80,7 +82,9 @@ fn generate_keys(output_path: Option<String>) -> Result<(), Box<dyn std::error::
 }
 
 fn read_signing_key(key_file: Option<&str>) -> Result<SigningKey, Box<dyn std::error::Error>> {
-    let path = key_file.map(PathBuf::from).unwrap_or_else(default_keys_path);
+    let path = key_file
+        .map(PathBuf::from)
+        .unwrap_or_else(default_keys_path);
     let config: toml::Table = toml::from_str(&fs::read_to_string(&path)?)?;
 
     let sk_str = config["keys"]["signing_key"]
@@ -120,7 +124,11 @@ fn sign_webapp(
 
     let mut out = fs::File::create(&output)?;
     out.write_all(&metadata_bytes)?;
-    println!("Metadata written to: {} ({} bytes)", output, metadata_bytes.len());
+    println!(
+        "Metadata written to: {} ({} bytes)",
+        output,
+        metadata_bytes.len()
+    );
 
     // Write 32-byte verifying key as parameters
     let vk = signing_key.verifying_key();

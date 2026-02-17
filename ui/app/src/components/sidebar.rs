@@ -1,9 +1,9 @@
-use std::collections::HashMap;
-use dioxus::prelude::*;
+use crate::api::{ConnectionStatus, CONNECTION_STATUS};
 use crate::app::{Contract, Route};
-use crate::api::{CONNECTION_STATUS, ConnectionStatus};
+use dioxus::prelude::*;
 use ed25519_dalek::SigningKey;
 use pizza_common::order_state::ItemContentV1;
+use std::collections::HashMap;
 
 #[component]
 pub fn Sidebar(
@@ -12,8 +12,7 @@ pub fn Sidebar(
     on_new_order: EventHandler<()>,
     on_delete: EventHandler<String>,
     selected_order_id: Option<String>,
-    #[props(default = false)]
-    loading: bool,
+    #[props(default = false)] loading: bool,
 ) -> Element {
     let user_vk = sk.read().verifying_key();
     let connection_status = CONNECTION_STATUS.read();

@@ -1,3 +1,4 @@
+use crate::order_state::OrderParametersV1;
 use crate::util::{truncated_base64, validate_currency};
 use crate::FullOrderStateV1;
 use ed25519_dalek::{Signature, SignatureError, Signer, SigningKey, Verifier, VerifyingKey};
@@ -5,7 +6,6 @@ use freenet_scaffold::util::{fast_hash, FastHash};
 use freenet_scaffold::ComposableState;
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use crate::order_state::OrderParametersV1;
 
 pub const MAX_TEXT_LEN: usize = 120;
 
@@ -64,8 +64,7 @@ impl ComposableState for AuthorizedOrderV1 {
                 .map_err(|e| format!("Invalid signature: {}", e))?;
 
             // Check if the new version is greater than the current version
-            if delta.order.order_version <= self.order.order_version
-            {
+            if delta.order.order_version <= self.order.order_version {
                 return Err(
                     "New configuration version must be greater than the current version"
                         .to_string(),
@@ -100,19 +99,13 @@ impl AuthorizedOrderV1 {
             .expect("Serialization should not fail");
         let signature = owner_signing_key.sign(&serialized_order);
 
-        Self {
-            order,
-            signature,
-        }
+        Self { order, signature }
     }
 
     /// Create an AuthorizedOrderV1 with a pre-computed signature.
     /// Use this when signing is done externally (e.g., via delegate).
     pub fn with_signature(order: Order, signature: Signature) -> Self {
-        Self {
-            order,
-            signature,
-        }
+        Self { order, signature }
     }
 
     pub fn verify_signature(
