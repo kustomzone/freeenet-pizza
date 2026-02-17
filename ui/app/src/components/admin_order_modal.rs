@@ -1,5 +1,6 @@
 use dioxus::prelude::*;
 use ed25519_dalek::{SigningKey, VerifyingKey};
+use log::info;
 use pizza_common::FullOrderStateV1Delta;
 use pizza_common::order_state::{ItemContentV1, ItemV1, AuthorizedItemV1};
 use pizza_common::util::{format_price, parse_price};
@@ -101,7 +102,10 @@ pub fn AdminOrderModal(
                     // Find the existing item
                     let existing = match current_state.state.items.items.iter().find(|it| it.item.signed_by == target_vk) {
                         Some(e) => e,
-                        None => return,
+                        None => {
+                            info!("AdminOrderModal: existing item not found");
+                            return;
+                        }
                     };
 
                     let new_item = ItemV1 {
@@ -123,16 +127,17 @@ pub fn AdminOrderModal(
                 }
             };
 
-            // Publish delta and close modal after completion
+            // Publish delta synchronously - spawn the async work but don't close until we've
+            // at least started the publish. We use spawn_forever to ensure the task isn't
+            // cancelled when the component unmounts.
             let base = base.clone();
             let id = contract_id.clone();
-            spawn(async move {
-                let _ = base.publish_delta(id, delta).await;
-                // Note: on_close is called synchronously before spawn,
-                // but the state update happens in publish_delta via notify_contract_update
+
+            // Use wasm_bindgen_futures to spawn a task that won't be cancelled
+            wasm_bindgen_futures::spawn_local(async move {
+                let result = base.publish_delta(id, delta).await;
             });
 
-            // Close immediately - the subscription will update the parent when publish completes
             on_close.call(());
         }
     };
@@ -212,7 +217,10 @@ pub fn AdminOrderModal(
                     }
                     button {
                         class: "btn btn-primary",
-                        onclick: move |_| handle_submit(),
+                        r#type: "button",
+                        onclick: move |_| {
+                            handle_submit();
+                        },
                         "{submit_label}"
                     }
                 }
