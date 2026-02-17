@@ -83,7 +83,11 @@ pub fn YourOrderSection(
                 paid: None,
                 version: None,
             };
-            let _ = base.publish_delta(id.clone(), delta);
+            let base = base.clone();
+            let id = id.clone();
+            spawn(async move {
+                let _ = base.publish_delta(id, delta).await;
+            });
 
             display_name.set(String::new());
             order_text.set(String::new());
@@ -148,7 +152,11 @@ pub fn YourOrderSection(
                     paid: None,
                     version: None,
                 };
-                let _ = base.publish_delta(id.clone(), delta);
+                let base = base.clone();
+                let id = id.clone();
+                spawn(async move {
+                    let _ = base.publish_delta(id, delta).await;
+                });
             }
             edit_mode.set(false);
         }
@@ -175,7 +183,11 @@ pub fn YourOrderSection(
                     paid: None,
                     version: None,
                 };
-                let _ = base.publish_delta(id.clone(), delta);
+                let base = base.clone();
+                let id = id.clone();
+                spawn(async move {
+                    let _ = base.publish_delta(id, delta).await;
+                });
             }
         }
     };

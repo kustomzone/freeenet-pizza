@@ -135,7 +135,11 @@ pub fn OrderViewComponent(
                         paid: Some(AuthorizedPaidV1::new(new_paid, &owner_sk)),
                         version: None,
                     };
-                    let _ = base.publish_delta(id.clone(), delta.clone());
+                    let base = base.clone();
+                    let id = id.clone();
+                    spawn(async move {
+                        let _ = base.publish_delta(id, delta).await;
+                    });
                 }
             };
             let handle_update_paid = use_signal(move || handle_update_paid);
