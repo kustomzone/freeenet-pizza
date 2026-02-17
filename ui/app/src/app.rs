@@ -81,11 +81,11 @@ fn AppContent() -> Element {
     use_effect(move || {
         let base = base.clone();
         spawn(async move {
-            // Initial load from cache
+            // Initial load from localStorage keys
             if let Ok(ids) = base.get_contracts() {
                 let mut loaded_contracts = HashMap::new();
                 for id in ids {
-                    // First try cache
+                    // First try cache (for contracts already in memory)
                     if let Some(contract) = base.get_contract_cached(id.clone()) {
                         let vk = contract.parameters.owner;
                         loaded_contracts.insert(id.clone(), Contract {
@@ -95,9 +95,19 @@ fn AppContent() -> Element {
                             vk,
                             id: id.clone(),
                         });
+                    } else {
+                        // Not in cache - fetch from network (this is the case on app startup)
+                        if let Ok(contract) = base.get_contract_async(id.clone()).await {
+                            let vk = contract.parameters.owner;
+                            loaded_contracts.insert(id.clone(), Contract {
+                                state: contract.state,
+                                parameters: contract.parameters,
+                                sk: None,
+                                vk,
+                                id: id.clone(),
+                            });
+                        }
                     }
-                    // Then fetch fresh from network (will update via subscription)
-                    let _ = base.get_contract_async(id).await;
                 }
                 contracts.set(loaded_contracts);
             }

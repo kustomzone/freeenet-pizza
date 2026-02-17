@@ -20,15 +20,17 @@ use super::base::{
 };
 use crate::api::node_api::{
     get_contract_keys, get_contract_state_cached, get_contract_by_key_async,
-    fetch_unknown_contract_async, publish_contract_async, send_contract_delta_async,
-    subscribe_to_contract_async, subscribe_to_contract_list, subscribe_to_contract_updates,
-    CONTRACTS,
+    get_contract_state_async, fetch_unknown_contract_async, publish_contract_async,
+    send_contract_delta_async, subscribe_to_contract_async, subscribe_to_contract_list,
+    subscribe_to_contract_updates, CONTRACTS,
 };
 
 /// Private key storage key in browser storage (for key persistence across sessions)
 const PRIVATE_KEY_KEY: &str = "pizza_private_key";
 /// Contract list storage key (stores list of contract key strings)
 const CONTRACT_LIST_KEY: &str = "pizza_contract_keys";
+/// Contract params storage key prefix (stores serialized params for each contract)
+const CONTRACT_PARAMS_PREFIX: &str = "pizza_contract_params_";
 
 /// FreenetService implements the BaseInterface trait using the Freenet node API.
 ///
@@ -95,14 +97,10 @@ impl FreenetService {
         }
     }
 
-    /// Save a contract key to localStorage.
-    fn save_contract_key(&self, key: &str) {
-        save_contract_key_static(&self.storage, key);
-    }
 }
 
-/// Static helper to save a contract key to localStorage (for use in async blocks).
-fn save_contract_key_static(storage: &Storage, key: &str) {
+/// Static helper to save a contract key and its params to localStorage (for use in async blocks).
+fn save_contract_key_static(storage: &Storage, key: &str, params: &OrderParametersV1) {
     // Load current list
     let mut contract_keys: Vec<String> = match storage.get_item(CONTRACT_LIST_KEY) {
         Ok(Some(json)) => serde_json::from_str(&json).unwrap_or_default(),
@@ -115,6 +113,21 @@ fn save_contract_key_static(storage: &Storage, key: &str) {
         if let Ok(json) = serde_json::to_string(&contract_keys) {
             let _ = storage.set_item(CONTRACT_LIST_KEY, &json);
         }
+    }
+
+    // Save params for this contract
+    let params_key = format!("{}{}", CONTRACT_PARAMS_PREFIX, key);
+    if let Ok(params_json) = serde_json::to_string(params) {
+        let _ = storage.set_item(&params_key, &params_json);
+    }
+}
+
+/// Load contract params from localStorage.
+fn load_contract_params_static(storage: &Storage, key: &str) -> Option<OrderParametersV1> {
+    let params_key = format!("{}{}", CONTRACT_PARAMS_PREFIX, key);
+    match storage.get_item(&params_key) {
+        Ok(Some(json)) => serde_json::from_str(&json).ok(),
+        _ => None,
     }
 }
 
@@ -161,22 +174,38 @@ impl BaseInterface for FreenetService {
                 return Ok(Contract { state, parameters: params });
             }
 
-            // Contract not in cache - try to fetch from network
-            let rx = fetch_unknown_contract_async(&id);
-            match rx.await {
-                Ok(response) => {
-                    if let Some(state) = response.state {
-                        // Contract was found and cached by handle_get_response
-                        // Get the params from the cache now
-                        if let Some((_, params)) = get_contract_state_cached(&id) {
-                            // Save to localStorage for future sessions
-                            save_contract_key_static(&storage, &id);
+            // Contract not in cache - check if we have params in localStorage
+            if let Some(params) = load_contract_params_static(&storage, &id) {
+                // We have params from localStorage, use get_contract_state_async
+                let rx = get_contract_state_async(&id, &params);
+                match rx.await {
+                    Ok(response) => {
+                        if let Some(state) = response.state {
                             return Ok(Contract { state, parameters: params });
                         }
                     }
+                    Err(_) => {
+                        // Channel cancelled
+                    }
                 }
-                Err(_) => {
-                    // Channel cancelled
+            } else {
+                // No params in localStorage - try to fetch unknown contract from network
+                let rx = fetch_unknown_contract_async(&id);
+                match rx.await {
+                    Ok(response) => {
+                        if let Some(state) = response.state {
+                            // Contract was found and cached by handle_get_response
+                            // Get the params from the cache now
+                            if let Some((_, params)) = get_contract_state_cached(&id) {
+                                // Save to localStorage for future sessions
+                                save_contract_key_static(&storage, &id, &params);
+                                return Ok(Contract { state, parameters: params });
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        // Channel cancelled
+                    }
                 }
             }
 
@@ -271,8 +300,8 @@ impl BaseInterface for FreenetService {
             match response_rx.await {
                 Ok(response) => {
                     if response.success {
-                        // Save contract key to localStorage
-                        save_contract_key_static(&storage, &response.contract_key);
+                        // Save contract key and params to localStorage
+                        save_contract_key_static(&storage, &response.contract_key, &params);
 
                         // Subscribe to updates for this contract
                         if let Some(subscribe_rx) = subscribe_to_contract_async(&contract_key) {
