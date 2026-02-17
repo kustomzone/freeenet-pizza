@@ -22,12 +22,19 @@ pub fn OrderViewComponent(
     let sk = base.get_private_key().unwrap();
     let user_vk = base.get_public_key().unwrap();
 
-    // Start with cached state if available, otherwise loading
-    let initial_state = match base.get_contract_cached(id.clone()) {
-        Some(c) => LoadState::Loaded(c),
-        None => LoadState::Loading,
-    };
-    let mut load_state = use_signal(|| initial_state);
+    // Track the current id to detect changes
+    let mut current_id = use_signal(|| id.clone());
+    let mut load_state = use_signal(|| LoadState::Loading);
+
+    // Reset state when id changes
+    if *current_id.read() != id {
+        current_id.set(id.clone());
+        // Set initial state from cache or loading
+        match base.get_contract_cached(id.clone()) {
+            Some(c) => load_state.set(LoadState::Loaded(c)),
+            None => load_state.set(LoadState::Loading),
+        };
+    }
 
     // Fetch contract and subscribe to updates
     use_effect({
@@ -38,7 +45,7 @@ pub fn OrderViewComponent(
             let base = base.clone();
             spawn(async move {
                 // Fetch contract (tries cache first, then network)
-                match base.get_contract_async(id.clone()).await {
+                match base.get_contract(id.clone()).await {
                     Ok(contract) => {
                         load_state.set(LoadState::Loaded(contract));
                     }
