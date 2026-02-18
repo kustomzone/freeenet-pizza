@@ -325,6 +325,11 @@ pub fn OrderViewComponent(id: String) -> Element {
                                                     let is_own = user_key == user_vk;
                                                     let item_paid = c.state.paid.paid.values.get(&user_key).copied().unwrap_or(false);
 
+                                                    // Format first 6 bytes of public key as hex
+                                                    let key_bytes = user_key.as_bytes();
+                                                    let key_hex = format!("{:02x}{:02x}{:02x}",
+                                                        key_bytes[0], key_bytes[1], key_bytes[2]);
+
                                                     let dn_for_edit = dn.clone();
                                                     let ord_for_edit = ord.clone();
 
@@ -332,6 +337,10 @@ pub fn OrderViewComponent(id: String) -> Element {
                                                         tr {
                                                             td {
                                                                 "{dn}"
+                                                                span {
+                                                                    style: "margin-left: 6px; font-size: 0.75em; color: var(--text-muted);",
+                                                                    "{key_hex}…"
+                                                                }
                                                                 if is_own {
                                                                     span {
                                                                         style: "margin-left: 8px; font-size: 0.8em; color: var(--secondary-color);",
