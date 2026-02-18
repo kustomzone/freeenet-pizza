@@ -163,10 +163,18 @@ body {
 .sidebar-about-link {
     display: block;
     text-align: center;
-    margin-top: 12px;
+    margin-bottom: 12px;
     color: rgba(255, 255, 255, 0.6);
     text-decoration: none;
     font-size: 0.85rem;
+    transition: color 0.2s;
+}
+
+.main-page-about-link {
+    display: block;
+    text-align: center;
+    margin-top: 12px;
+    text-decoration: none;
     transition: color 0.2s;
 }
 

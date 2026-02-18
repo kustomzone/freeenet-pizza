@@ -251,6 +251,13 @@ fn HomePage() -> Element {
             class: "empty-state",
             h3 { "No order selected" }
             p { "Select an order from the sidebar or create a new one" }
+            p {
+               Link {
+                    to: Route::AboutPageRoute {},
+                    class: "main-page-about-link",
+                    "About the app"
+                }
+            }
         }
     }
 }

@@ -182,16 +182,16 @@ pub fn Sidebar(
 
             div {
                 class: "sidebar-footer",
-                button {
-                    class: "btn btn-primary btn-full-width",
-                    onclick: move |_| on_new_order.call(()),
-                    span { "+ New Order" }
-                }
                 Link {
                     to: Route::AboutPageRoute {},
                     class: "sidebar-about-link",
                     onclick: move |_| sidebar_open.set(false),
                     "About"
+                }
+                button {
+                    class: "btn btn-primary btn-full-width",
+                    onclick: move |_| on_new_order.call(()),
+                    span { "+ New Order" }
                 }
             }
         }
