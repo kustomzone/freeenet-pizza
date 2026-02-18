@@ -81,7 +81,7 @@ pub fn AboutPage() -> Element {
                     p {
                         "Please note that both this app and the underlying Freenet technology are new and may contain bugs. If the app hangs while loading or seems to not save your changes, simply reload it. If the issue persists "
                         a {
-                            href: "https://github.com/realraum/pizza-freenet/issues/new",
+                            href: "https://github.com/realraum/freenet-pizza/issues/new",
                             target: "_blank",
                             "please file a bug report"
                         }
