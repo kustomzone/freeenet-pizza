@@ -78,9 +78,14 @@ pub fn Sidebar(
                     onclick: move |_| sidebar_open.set(false),
                     "✕"
                 }
-                h1 {
-                    span { "🍕" }
-                    span { "Pizza Orders" }
+                Link {
+                    to: Route::AboutPageRoute {},
+                    class: "sidebar-title-link",
+                    onclick: move |_| sidebar_open.set(false),
+                    h1 {
+                        span { "🍕" }
+                        span { "Pizza Orders" }
+                    }
                 }
                 {status_indicator}
             }
