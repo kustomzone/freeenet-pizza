@@ -63,6 +63,34 @@ pub fn AboutPage() -> Element {
 
                 section {
                     class: "about-section",
+                    h2 { "Open Source" }
+                    p {
+                        "The source code for this application is "
+                        a {
+                            href: "https://github.com/realraum/freenet-pizza",
+                            target: "_blank",
+                            "available on GitHub"
+                        }
+                        "."
+                    }
+                }
+
+                section {
+                    class: "about-section",
+                    h2 { "New technology ahead" }
+                    p {
+                        "Please note that both this app and the underlying Freenet technology are new and may contain bugs. If the app hangs while loading or seems to not save your changes, simply reload it. If the issue persists "
+                        a {
+                            href: "https://github.com/realraum/pizza-freenet/issues/new",
+                            target: "_blank",
+                            "please file a bug report"
+                        }
+                        "."
+                    }
+                }
+
+                section {
+                    class: "about-section",
                     h2 { "Use Cases" }
                     div {
                         class: "use-cases-grid",
