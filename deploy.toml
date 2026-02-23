@@ -1,0 +1,7 @@
+[project]
+id = "pizza-freenet"
+
+[app]
+type = "dioxus"
+package-id = "pizza-ui"
+

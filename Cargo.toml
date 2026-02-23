@@ -3,10 +3,7 @@ resolver = "2"
 members = [
     "common",
     "contracts/pizza-contract",
-    "contracts/web-container-contract",
     "delegates/pizza-delegate",
-    "web-container-tool",
-    "deploy-tool",
     "ui/app",
 ]
 
