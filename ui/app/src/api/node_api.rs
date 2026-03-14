@@ -942,7 +942,12 @@ fn handle_delegate_response(values: Vec<freenet_stdlib::prelude::OutboundDelegat
                                 }
                             }
                             PizzaDelegateResponse::GetContractKeysResponse { keys } => {
-                                info!("Got {} contract keys", keys.len());
+                                info!("Got {} contract keys from delegate", keys.len());
+                                // Fetch each contract from the network
+                                for key in keys {
+                                    info!("Fetching contract: {}", key);
+                                    let _ = fetch_unknown_contract_async(&key);
+                                }
                             }
                             PizzaDelegateResponse::StoreSigningKeyResponse { result } => {
                                 match result {
