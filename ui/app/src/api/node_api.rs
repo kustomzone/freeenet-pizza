@@ -56,25 +56,38 @@ fn get_http_base_url() -> String {
     FALLBACK_HTTP_URL.to_string()
 }
 
+/// Default WebSocket URL for local development
+const DEFAULT_WS_URL: &str = "ws://localhost:7509/v1/contract/command?encodingProtocol=native";
+
 /// Get the WebSocket URL for connecting to the Freenet node.
-/// Derives the URL from the current window.location, allowing the app to work
-/// on any host/port (not just localhost:7509).
+/// If auth token is injected (running through gateway), derives URL from window.location.
+/// Otherwise uses default localhost:7509 for local development.
 pub fn get_websocket_url() -> String {
     #[cfg(target_arch = "wasm32")]
     {
         if let Some(window) = web_sys::window() {
-            let location = window.location();
-            let protocol = location.protocol().unwrap_or_default();
-            let host = location.host().unwrap_or_default(); // includes port
+            // Check if auth token is injected (means we're running through the gateway)
+            let has_auth_token =
+                match js_sys::Reflect::get(&window, &"__FREENET_AUTH_TOKEN__".into()) {
+                    Ok(token_value) => token_value.as_string().is_some(),
+                    Err(_) => false,
+                };
 
-            let ws_protocol = if protocol == "https:" { "wss:" } else { "ws:" };
-            return format!(
-                "{}//{}/v1/contract/command?encodingProtocol=native",
-                ws_protocol, host
-            );
+            if has_auth_token {
+                // Running through gateway - derive URL from window.location
+                let location = window.location();
+                let protocol = location.protocol().unwrap_or_default();
+                let host = location.host().unwrap_or_default();
+                let ws_protocol = if protocol == "https:" { "wss:" } else { "ws:" };
+                return format!(
+                    "{}//{}/v1/contract/command?encodingProtocol=native",
+                    ws_protocol, host
+                );
+            }
         }
     }
-    "ws://localhost:7509/v1/contract/command?encodingProtocol=native".to_string()
+    // No auth token or not in browser - use default localhost URL
+    DEFAULT_WS_URL.to_string()
 }
 
 /// Authorization token from the Freenet gateway
