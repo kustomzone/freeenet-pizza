@@ -1,14 +1,13 @@
 //! Pizza Delegate API - Communication with the pizza-delegate for private state storage.
 //!
 //! This module provides async communication with the pizza-delegate for storing
-//! contract keys, signing keys, and performing signing operations without exposing
-//! private keys to the browser.
+//! contract keys and signing key in Freenet secret storage.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
-use ciborium::{de::from_reader, ser::into_writer};
+use ciborium::ser::into_writer;
 use freenet_stdlib::client_api::ClientRequest::DelegateOp;
 use freenet_stdlib::client_api::DelegateRequest;
 use freenet_stdlib::prelude::tracing::{error, info};
@@ -18,24 +17,11 @@ use freenet_stdlib::prelude::{
 };
 use futures::channel::oneshot;
 use futures::future::{select, Either};
-use pizza_common::order_delegate::{
-    OrderDelegateKey, OrderDelegateRequestMsg, OrderDelegateResponseMsg, RequestId, RoomKey,
-};
+use pizza_common::order_delegate::{PizzaDelegateRequest, PizzaDelegateResponse, RequestId};
 
 /// Delegate WASM bytes - embedded at compile time
 pub const DELEGATE_WASM: &[u8] =
     include_bytes!("../../../../delegates/pizza-delegate/build/pizza_delegate.wasm");
-
-/// Storage key for contract keys list
-pub const CONTRACT_KEYS_STORAGE_KEY: &[u8] = b"contract_keys";
-
-/// Storage key for signing key
-pub const SIGNING_KEY_STORAGE_KEY: &[u8] = b"signing_key";
-
-// Prefixes for different pending request types
-const SIGNING_KEY_PREFIX: &[u8] = b"__signing_key:";
-const PUBLIC_KEY_PREFIX: &[u8] = b"__public_key:";
-const SIGN_PREFIX: &[u8] = b"__sign:";
 
 /// Atomic counter for generating unique request IDs
 static REQUEST_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
@@ -45,56 +31,42 @@ pub fn generate_request_id() -> RequestId {
     REQUEST_ID_COUNTER.fetch_add(1, Ordering::Relaxed)
 }
 
+// Request tracking keys
+const CONTRACT_KEYS_KEY: &[u8] = b"__contract_keys__";
+const SIGNING_KEY_KEY: &[u8] = b"__signing_key__";
+const PUBLIC_KEY_KEY: &[u8] = b"__public_key__";
+const SIGN_PREFIX: &[u8] = b"__sign:";
+
 /// Registry for pending delegate requests.
 /// Maps request keys to oneshot senders that will receive the response.
 static PENDING_REQUESTS: std::sync::LazyLock<
-    Mutex<HashMap<Vec<u8>, oneshot::Sender<OrderDelegateResponseMsg>>>,
+    Mutex<HashMap<Vec<u8>, oneshot::Sender<PizzaDelegateResponse>>>,
 > = std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
-/// Complete a pending delegate request with the given response.
-/// Called by the response handler when a delegate response is received.
-pub fn complete_pending_request(
-    key: &OrderDelegateKey,
-    response: OrderDelegateResponseMsg,
-) -> bool {
-    let key_bytes = key.as_bytes().to_vec();
-    complete_pending_request_bytes(&key_bytes, response)
+/// Complete a pending contract keys request.
+pub fn complete_pending_contract_keys_request(response: PizzaDelegateResponse) -> bool {
+    complete_pending_request_bytes(CONTRACT_KEYS_KEY, response)
 }
 
 /// Complete a pending signing key store request.
-pub fn complete_pending_signing_key_request(
-    room_key: &RoomKey,
-    response: OrderDelegateResponseMsg,
-) -> bool {
-    let mut key_bytes = SIGNING_KEY_PREFIX.to_vec();
-    key_bytes.extend_from_slice(room_key);
-    complete_pending_request_bytes(&key_bytes, response)
+pub fn complete_pending_signing_key_request(response: PizzaDelegateResponse) -> bool {
+    complete_pending_request_bytes(SIGNING_KEY_KEY, response)
 }
 
 /// Complete a pending public key request.
-pub fn complete_pending_public_key_request(
-    room_key: &RoomKey,
-    response: OrderDelegateResponseMsg,
-) -> bool {
-    let mut key_bytes = PUBLIC_KEY_PREFIX.to_vec();
-    key_bytes.extend_from_slice(room_key);
-    complete_pending_request_bytes(&key_bytes, response)
+pub fn complete_pending_public_key_request(response: PizzaDelegateResponse) -> bool {
+    complete_pending_request_bytes(PUBLIC_KEY_KEY, response)
 }
 
-/// Complete a pending signing request using room_key and request_id for correlation.
-pub fn complete_pending_sign_request(
-    room_key: &RoomKey,
-    request_id: RequestId,
-    response: OrderDelegateResponseMsg,
-) -> bool {
+/// Complete a pending sign request.
+pub fn complete_pending_sign_request(request_id: RequestId, response: PizzaDelegateResponse) -> bool {
     let mut key_bytes = SIGN_PREFIX.to_vec();
-    key_bytes.extend_from_slice(room_key);
     key_bytes.extend_from_slice(&request_id.to_le_bytes());
     complete_pending_request_bytes(&key_bytes, response)
 }
 
 /// Internal function to complete a pending request by key bytes.
-fn complete_pending_request_bytes(key_bytes: &[u8], response: OrderDelegateResponseMsg) -> bool {
+fn complete_pending_request_bytes(key_bytes: &[u8], response: PizzaDelegateResponse) -> bool {
     if let Ok(mut pending) = PENDING_REQUESTS.lock() {
         if let Some(sender) = pending.remove(key_bytes) {
             if sender.send(response).is_ok() {
@@ -125,70 +97,15 @@ pub fn get_delegate_key() -> freenet_stdlib::prelude::DelegateKey {
     delegate.key().clone()
 }
 
-/// Extract the key from a request message for tracking purposes.
-fn get_request_key(request: &OrderDelegateRequestMsg) -> Vec<u8> {
+/// Get the request tracking key for a request.
+fn get_request_key(request: &PizzaDelegateRequest) -> Vec<u8> {
     match request {
-        // Key-value storage operations
-        OrderDelegateRequestMsg::StoreRequest { key, .. } => key.as_bytes().to_vec(),
-        OrderDelegateRequestMsg::GetRequest { key } => key.as_bytes().to_vec(),
-        OrderDelegateRequestMsg::DeleteRequest { key } => key.as_bytes().to_vec(),
-        OrderDelegateRequestMsg::ListRequest => b"__list_request__".to_vec(),
-
-        // Signing key management
-        OrderDelegateRequestMsg::StoreSigningKey { room_key, .. } => {
-            let mut key = SIGNING_KEY_PREFIX.to_vec();
-            key.extend_from_slice(room_key);
-            key
-        }
-        OrderDelegateRequestMsg::GetPublicKey { room_key } => {
-            let mut key = PUBLIC_KEY_PREFIX.to_vec();
-            key.extend_from_slice(room_key);
-            key
-        }
-
-        // Signing operations - use prefix + room_key + request_id for uniqueness
-        OrderDelegateRequestMsg::SignMessage {
-            room_key,
-            request_id,
-            ..
-        }
-        | OrderDelegateRequestMsg::SignMember {
-            room_key,
-            request_id,
-            ..
-        }
-        | OrderDelegateRequestMsg::SignBan {
-            room_key,
-            request_id,
-            ..
-        }
-        | OrderDelegateRequestMsg::SignConfig {
-            room_key,
-            request_id,
-            ..
-        }
-        | OrderDelegateRequestMsg::SignMemberInfo {
-            room_key,
-            request_id,
-            ..
-        }
-        | OrderDelegateRequestMsg::SignSecretVersion {
-            room_key,
-            request_id,
-            ..
-        }
-        | OrderDelegateRequestMsg::SignEncryptedSecret {
-            room_key,
-            request_id,
-            ..
-        }
-        | OrderDelegateRequestMsg::SignUpgrade {
-            room_key,
-            request_id,
-            ..
-        } => {
+        PizzaDelegateRequest::StoreContractKeys { .. } => CONTRACT_KEYS_KEY.to_vec(),
+        PizzaDelegateRequest::GetContractKeys => CONTRACT_KEYS_KEY.to_vec(),
+        PizzaDelegateRequest::StoreSigningKey { .. } => SIGNING_KEY_KEY.to_vec(),
+        PizzaDelegateRequest::GetPublicKey => PUBLIC_KEY_KEY.to_vec(),
+        PizzaDelegateRequest::Sign { request_id, .. } => {
             let mut key = SIGN_PREFIX.to_vec();
-            key.extend_from_slice(room_key);
             key.extend_from_slice(&request_id.to_le_bytes());
             key
         }
@@ -197,8 +114,8 @@ fn get_request_key(request: &OrderDelegateRequestMsg) -> Vec<u8> {
 
 /// Send a request to the delegate and wait for the response.
 pub async fn send_delegate_request(
-    request: OrderDelegateRequestMsg,
-) -> Result<OrderDelegateResponseMsg, String> {
+    request: PizzaDelegateRequest,
+) -> Result<PizzaDelegateResponse, String> {
     info!("Sending delegate request: {:?}", request);
 
     // Get the key bytes for tracking this request
@@ -232,7 +149,7 @@ pub async fn send_delegate_request(
         inbound: vec![InboundDelegateMsg::ApplicationMessage(app_msg)],
     });
 
-    // Convert to ClientRequest and send via WebSocket
+    // Send via WebSocket
     send_delegate_request_via_ws(&delegate_request);
 
     info!("Request sent, waiting for response...");
@@ -258,9 +175,9 @@ pub async fn send_delegate_request(
     }
 }
 
-/// Fire a request to load data from delegate storage without waiting for response.
+/// Fire a request to the delegate without waiting for response.
 /// Used during initialization to avoid deadlocks in the message loop.
-pub fn fire_delegate_request(request: OrderDelegateRequestMsg) {
+pub fn fire_delegate_request(request: PizzaDelegateRequest) {
     info!("Firing delegate request (fire and forget): {:?}", request);
 
     // Serialize the request
@@ -334,98 +251,66 @@ async fn sleep_ms(ms: u32) {
 }
 
 // ============================================================================
-// High-level API functions for storage operations
+// High-level API functions
 // ============================================================================
 
 /// Store contract keys in the delegate.
-pub async fn store_contract_keys(keys: &[String]) -> Result<(), String> {
-    let mut buffer = Vec::new();
-    into_writer(keys, &mut buffer)
-        .map_err(|e| format!("Failed to serialize contract keys: {}", e))?;
-
-    let request = OrderDelegateRequestMsg::StoreRequest {
-        key: OrderDelegateKey::new(CONTRACT_KEYS_STORAGE_KEY.to_vec()),
-        value: buffer,
-    };
+pub async fn store_contract_keys(keys: Vec<String>) -> Result<(), String> {
+    let request = PizzaDelegateRequest::StoreContractKeys { keys };
 
     match send_delegate_request(request).await? {
-        OrderDelegateResponseMsg::StoreResponse { result, .. } => result,
+        PizzaDelegateResponse::StoreContractKeysResponse { result } => result,
         other => Err(format!("Unexpected response: {:?}", other)),
     }
 }
 
 /// Load contract keys from the delegate.
 pub async fn load_contract_keys() -> Result<Vec<String>, String> {
-    let request = OrderDelegateRequestMsg::GetRequest {
-        key: OrderDelegateKey::new(CONTRACT_KEYS_STORAGE_KEY.to_vec()),
-    };
+    let request = PizzaDelegateRequest::GetContractKeys;
 
     match send_delegate_request(request).await? {
-        OrderDelegateResponseMsg::GetResponse { value, .. } => {
-            if let Some(data) = value {
-                from_reader::<Vec<String>, _>(&data[..])
-                    .map_err(|e| format!("Failed to deserialize contract keys: {}", e))
-            } else {
-                Ok(Vec::new())
-            }
-        }
+        PizzaDelegateResponse::GetContractKeysResponse { keys } => Ok(keys),
         other => Err(format!("Unexpected response: {:?}", other)),
     }
 }
 
-/// Store a signing key in the delegate.
-pub async fn store_signing_key(
-    room_key: RoomKey,
-    signing_key_bytes: [u8; 32],
-) -> Result<(), String> {
-    let request = OrderDelegateRequestMsg::StoreSigningKey {
-        room_key,
-        signing_key_bytes,
-    };
+/// Store the signing key in the delegate.
+pub async fn store_signing_key(signing_key_bytes: [u8; 32]) -> Result<(), String> {
+    let request = PizzaDelegateRequest::StoreSigningKey { signing_key_bytes };
 
     match send_delegate_request(request).await? {
-        OrderDelegateResponseMsg::StoreSigningKeyResponse { result, .. } => result,
+        PizzaDelegateResponse::StoreSigningKeyResponse { result } => result,
         other => Err(format!("Unexpected response: {:?}", other)),
     }
 }
 
-/// Get the public key from a stored signing key.
-pub async fn get_public_key(room_key: RoomKey) -> Result<Option<[u8; 32]>, String> {
-    let request = OrderDelegateRequestMsg::GetPublicKey { room_key };
+/// Get the public key from the stored signing key.
+pub async fn get_public_key() -> Result<Option<[u8; 32]>, String> {
+    let request = PizzaDelegateRequest::GetPublicKey;
 
     match send_delegate_request(request).await? {
-        OrderDelegateResponseMsg::GetPublicKeyResponse { public_key, .. } => Ok(public_key),
+        PizzaDelegateResponse::GetPublicKeyResponse { public_key } => Ok(public_key),
         other => Err(format!("Unexpected response: {:?}", other)),
     }
 }
 
-/// Sign a message using the signing key stored in the delegate.
-pub async fn sign_message(room_key: RoomKey, message_bytes: Vec<u8>) -> Result<Vec<u8>, String> {
+/// Sign data with the stored signing key.
+pub async fn sign_data(data: Vec<u8>) -> Result<Vec<u8>, String> {
     let request_id = generate_request_id();
-    let request = OrderDelegateRequestMsg::SignMessage {
-        room_key,
-        request_id,
-        message_bytes,
-    };
+    let request = PizzaDelegateRequest::Sign { request_id, data };
 
     match send_delegate_request(request).await? {
-        OrderDelegateResponseMsg::SignResponse { signature, .. } => signature,
+        PizzaDelegateResponse::SignResponse { signature, .. } => signature,
         other => Err(format!("Unexpected response: {:?}", other)),
     }
 }
 
 /// Fire a request to load contract keys without waiting (for initialization).
 pub fn fire_load_contract_keys_request() {
-    let request = OrderDelegateRequestMsg::GetRequest {
-        key: OrderDelegateKey::new(CONTRACT_KEYS_STORAGE_KEY.to_vec()),
-    };
-    fire_delegate_request(request);
+    fire_delegate_request(PizzaDelegateRequest::GetContractKeys);
 }
 
-/// Fire a request to load signing key without waiting (for initialization).
-pub fn fire_load_signing_key_request() {
-    let request = OrderDelegateRequestMsg::GetRequest {
-        key: OrderDelegateKey::new(SIGNING_KEY_STORAGE_KEY.to_vec()),
-    };
-    fire_delegate_request(request);
+/// Fire a request to get public key without waiting (for initialization).
+pub fn fire_get_public_key_request() {
+    fire_delegate_request(PizzaDelegateRequest::GetPublicKey);
 }

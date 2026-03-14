@@ -5,7 +5,6 @@ mod handlers;
 mod models;
 mod utils;
 
-use context::*;
 use freenet_stdlib::prelude::{
     delegate, ApplicationMessage, DelegateContext, DelegateCtx, DelegateError, DelegateInterface,
     InboundDelegateMsg, MessageOrigin, OutboundDelegateMsg, Parameters,
@@ -17,17 +16,14 @@ use utils::*;
 // Custom logging module to handle different environments
 mod logging;
 
-use pizza_common::order_delegate::*;
+use pizza_common::order_delegate::{PizzaDelegateRequest, PizzaDelegateResponse};
 use serde::{Deserialize, Serialize};
 
-/// Order delegate for storing and retrieving data in the Freenet secret storage.
-///
-/// This delegate provides a key-value store interface for chat applications,
-/// using the host function API for direct secret access (no message round-trips).
-pub struct OrderDelegate;
+/// Pizza delegate for storing contract keys and signing key in Freenet secret storage.
+pub struct PizzaDelegate;
 
 #[delegate]
-impl DelegateInterface for OrderDelegate {
+impl DelegateInterface for PizzaDelegate {
     fn process(
         ctx: &mut DelegateCtx,
         _parameters: Parameters<'static>,

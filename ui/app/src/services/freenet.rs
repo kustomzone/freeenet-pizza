@@ -15,7 +15,6 @@ use freenet_stdlib::prelude::tracing::{error, info, warn};
 use freenet_stdlib::prelude::ContractKey;
 use futures::Stream;
 use futures::StreamExt;
-use pizza_common::order_delegate::RoomKey;
 use pizza_common::{ComposableState, FullOrderStateV1, FullOrderStateV1Delta, OrderParametersV1};
 
 use super::base::{
@@ -28,10 +27,6 @@ use crate::api::node_api::{
     publish_contract_async, send_contract_delta_async, subscribe_to_contract_async,
     subscribe_to_contract_list, subscribe_to_contract_updates, CONTRACTS,
 };
-
-/// Default room key (all zeros) used for single-user signing key storage.
-/// In pizza app, we only have one user per instance, so we use a fixed room key.
-const DEFAULT_ROOM_KEY: RoomKey = [0u8; 32];
 
 /// Global signal to track if we have loaded the signing key from delegate.
 pub static SIGNING_KEY_LOADED: GlobalSignal<bool> = Global::new(|| false);
@@ -87,7 +82,7 @@ impl FreenetService {
         info!("Initializing signing key from delegate");
 
         // Try to get the public key first to check if signing key exists
-        match delegate_api::get_public_key(DEFAULT_ROOM_KEY).await {
+        match delegate_api::get_public_key().await {
             Ok(Some(_public_key)) => {
                 // Signing key exists in delegate - we can't retrieve the private key,
                 // but we can use the delegate for signing operations.
@@ -107,7 +102,7 @@ impl FreenetService {
         let signing_key = SigningKey::generate(&mut rng);
 
         // Store the signing key in the delegate
-        match delegate_api::store_signing_key(DEFAULT_ROOM_KEY, signing_key.to_bytes()).await {
+        match delegate_api::store_signing_key(signing_key.to_bytes()).await {
             Ok(()) => {
                 info!("Stored new signing key in delegate");
             }
@@ -151,7 +146,7 @@ impl FreenetService {
 
     /// Save contract keys to delegate
     async fn save_contract_keys(keys: &[String]) {
-        if let Err(e) = delegate_api::store_contract_keys(keys).await {
+        if let Err(e) = delegate_api::store_contract_keys(keys.to_vec()).await {
             error!("Failed to save contract keys to delegate: {}", e);
         }
     }

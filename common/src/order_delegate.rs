@@ -1,144 +1,46 @@
 use serde::{Deserialize, Serialize};
 
-/// Room key identifier (owner's verifying key bytes)
-pub type RoomKey = [u8; 32];
-
 /// Unique identifier for a signing request (for request/response correlation)
 pub type RequestId = u64;
 
-/// Messages sent from the App to the Order Delegate
+/// Messages sent from the App to the Pizza Delegate
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum OrderDelegateRequestMsg {
-    // Key-value storage operations
-    StoreRequest {
-        key: OrderDelegateKey,
-        value: Vec<u8>,
-    },
-    GetRequest {
-        key: OrderDelegateKey,
-    },
-    DeleteRequest {
-        key: OrderDelegateKey,
-    },
-    ListRequest,
+pub enum PizzaDelegateRequest {
+    /// Store contract keys (list of contract key strings the user has interacted with)
+    StoreContractKeys { keys: Vec<String> },
+    /// Get stored contract keys
+    GetContractKeys,
 
-    // Signing key management
-    /// Store a signing key for a room (room_key = owner's verifying key bytes)
-    StoreSigningKey {
-        room_key: RoomKey,
-        signing_key_bytes: [u8; 32],
-    },
-    /// Get the public key for a stored signing key
-    GetPublicKey {
-        room_key: RoomKey,
-    },
-
-    // Signing operations - pass serialized data, get signature back
-    // All signing ops include request_id for response correlation
-    /// Sign a message (MessageV1 serialized)
-    SignMessage {
-        room_key: RoomKey,
+    /// Store the user's signing key (32 bytes)
+    StoreSigningKey { signing_key_bytes: [u8; 32] },
+    /// Get the public key for the stored signing key
+    GetPublicKey,
+    /// Sign arbitrary data with the stored signing key
+    Sign {
         request_id: RequestId,
-        message_bytes: Vec<u8>,
-    },
-    /// Sign a member invitation (Member serialized)
-    SignMember {
-        room_key: RoomKey,
-        request_id: RequestId,
-        member_bytes: Vec<u8>,
-    },
-    /// Sign a ban (BanV1 serialized)
-    SignBan {
-        room_key: RoomKey,
-        request_id: RequestId,
-        ban_bytes: Vec<u8>,
-    },
-    /// Sign a room configuration (Configuration serialized)
-    SignConfig {
-        room_key: RoomKey,
-        request_id: RequestId,
-        config_bytes: Vec<u8>,
-    },
-    /// Sign member info (MemberInfo serialized)
-    SignMemberInfo {
-        room_key: RoomKey,
-        request_id: RequestId,
-        member_info_bytes: Vec<u8>,
-    },
-    /// Sign a secret version record (SecretVersionRecordV1 serialized)
-    SignSecretVersion {
-        room_key: RoomKey,
-        request_id: RequestId,
-        record_bytes: Vec<u8>,
-    },
-    /// Sign an encrypted secret for member (EncryptedSecretForMemberV1 serialized)
-    SignEncryptedSecret {
-        room_key: RoomKey,
-        request_id: RequestId,
-        secret_bytes: Vec<u8>,
-    },
-    /// Sign a room upgrade (RoomUpgrade serialized)
-    SignUpgrade {
-        room_key: RoomKey,
-        request_id: RequestId,
-        upgrade_bytes: Vec<u8>,
+        data: Vec<u8>,
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct OrderDelegateKey(pub Vec<u8>);
-
-impl OrderDelegateKey {
-    pub fn new(key: Vec<u8>) -> Self {
-        Self(key)
-    }
-
-    pub fn as_bytes(&self) -> &[u8] {
-        &self.0
-    }
-}
-
-/// Responses sent from the Order Delegate to the App
+/// Responses sent from the Pizza Delegate to the App
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum OrderDelegateResponseMsg {
-    // Key-value storage responses
-    GetResponse {
-        key: OrderDelegateKey,
-        value: Option<Vec<u8>>,
-    },
-    ListResponse {
-        keys: Vec<OrderDelegateKey>,
-    },
-    StoreResponse {
-        key: OrderDelegateKey,
-        value_size: usize,
-        result: Result<(), String>,
-    },
-    DeleteResponse {
-        key: OrderDelegateKey,
-        result: Result<(), String>,
-    },
+pub enum PizzaDelegateResponse {
+    /// Response to StoreContractKeys
+    StoreContractKeysResponse { result: Result<(), String> },
+    /// Response to GetContractKeys
+    GetContractKeysResponse { keys: Vec<String> },
 
-    // Signing key management responses
     /// Response to StoreSigningKey
-    StoreSigningKeyResponse {
-        room_key: RoomKey,
-        result: Result<(), String>,
-    },
+    StoreSigningKeyResponse { result: Result<(), String> },
     /// Response to GetPublicKey
     GetPublicKeyResponse {
-        room_key: RoomKey,
         /// The public key bytes if the signing key exists
         public_key: Option<[u8; 32]>,
     },
-
-    // Signing response (used for all signing operations)
-    /// Response to any signing operation
+    /// Response to Sign
     SignResponse {
-        room_key: RoomKey,
-        /// The request ID for correlation
         request_id: RequestId,
-        /// The signature bytes (64 bytes for Ed25519, as Vec for serde compatibility)
+        /// The signature bytes (64 bytes for Ed25519)
         signature: Result<Vec<u8>, String>,
     },
 }

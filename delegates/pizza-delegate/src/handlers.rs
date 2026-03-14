@@ -1,7 +1,7 @@
 use super::*;
 use ed25519_dalek::{Signer, SigningKey};
 use freenet_stdlib::prelude::DelegateCtx;
-use pizza_common::order_delegate::{RequestId, RoomKey};
+use pizza_common::order_delegate::RequestId;
 
 /// Handle an application message using the host function API for direct secret access.
 pub(crate) fn handle_application_message(
@@ -10,328 +10,137 @@ pub(crate) fn handle_application_message(
     origin: &Origin,
 ) -> Result<Vec<OutboundDelegateMsg>, DelegateError> {
     // Deserialize the request message
-    let request: OrderDelegateRequestMsg = ciborium::from_reader(app_msg.payload.as_slice())
+    let request: PizzaDelegateRequest = ciborium::from_reader(app_msg.payload.as_slice())
         .map_err(|e| DelegateError::Deser(format!("Failed to deserialize request: {e}")))?;
 
     match request {
-        // Key-value storage operations
-        OrderDelegateRequestMsg::StoreRequest { key, value } => {
-            logging::info(
-                format!(
-                    "Delegate received StoreRequest key: {key:?}, value_len: {}",
-                    value.len()
-                )
-                .as_str(),
-            );
-            handle_store_request(ctx, origin, key, value)
+        PizzaDelegateRequest::StoreContractKeys { keys } => {
+            logging::info(&format!(
+                "Delegate received StoreContractKeys with {} keys",
+                keys.len()
+            ));
+            handle_store_contract_keys(ctx, origin, keys)
         }
-        OrderDelegateRequestMsg::GetRequest { key } => {
-            logging::info(format!("Delegate received GetRequest key: {key:?}").as_str());
-            handle_get_request(ctx, origin, key)
+        PizzaDelegateRequest::GetContractKeys => {
+            logging::info("Delegate received GetContractKeys");
+            handle_get_contract_keys(ctx, origin)
         }
-        OrderDelegateRequestMsg::DeleteRequest { key } => {
-            logging::info(format!("Delegate received DeleteRequest key: {key:?}").as_str());
-            handle_delete_request(ctx, origin, key)
+        PizzaDelegateRequest::StoreSigningKey { signing_key_bytes } => {
+            logging::info("Delegate received StoreSigningKey");
+            handle_store_signing_key(ctx, origin, signing_key_bytes)
         }
-        OrderDelegateRequestMsg::ListRequest => {
-            logging::info("Delegate received ListRequest");
-            handle_list_request(ctx, origin)
+        PizzaDelegateRequest::GetPublicKey => {
+            logging::info("Delegate received GetPublicKey");
+            handle_get_public_key(ctx, origin)
         }
-
-        // Signing key management
-        OrderDelegateRequestMsg::StoreSigningKey {
-            room_key,
-            signing_key_bytes,
-        } => {
-            logging::info(
-                format!("Delegate received StoreSigningKey for room: {room_key:?}").as_str(),
-            );
-            handle_store_signing_key(ctx, origin, room_key, signing_key_bytes)
-        }
-        OrderDelegateRequestMsg::GetPublicKey { room_key } => {
-            logging::info(
-                format!("Delegate received GetPublicKey for room: {room_key:?}").as_str(),
-            );
-            handle_get_public_key(ctx, origin, room_key)
-        }
-
-        // Signing operations - all include request_id for correlation
-        OrderDelegateRequestMsg::SignMessage {
-            room_key,
-            request_id,
-            message_bytes,
-        } => {
-            logging::info(format!("Delegate received SignMessage for room: {room_key:?}").as_str());
-            handle_sign_request(ctx, origin, room_key, request_id, message_bytes)
-        }
-        OrderDelegateRequestMsg::SignMember {
-            room_key,
-            request_id,
-            member_bytes,
-        } => {
-            logging::info(format!("Delegate received SignMember for room: {room_key:?}").as_str());
-            handle_sign_request(ctx, origin, room_key, request_id, member_bytes)
-        }
-        OrderDelegateRequestMsg::SignBan {
-            room_key,
-            request_id,
-            ban_bytes,
-        } => {
-            logging::info(format!("Delegate received SignBan for room: {room_key:?}").as_str());
-            handle_sign_request(ctx, origin, room_key, request_id, ban_bytes)
-        }
-        OrderDelegateRequestMsg::SignConfig {
-            room_key,
-            request_id,
-            config_bytes,
-        } => {
-            logging::info(format!("Delegate received SignConfig for room: {room_key:?}").as_str());
-            handle_sign_request(ctx, origin, room_key, request_id, config_bytes)
-        }
-        OrderDelegateRequestMsg::SignMemberInfo {
-            room_key,
-            request_id,
-            member_info_bytes,
-        } => {
-            logging::info(
-                format!("Delegate received SignMemberInfo for room: {room_key:?}").as_str(),
-            );
-            handle_sign_request(ctx, origin, room_key, request_id, member_info_bytes)
-        }
-        OrderDelegateRequestMsg::SignSecretVersion {
-            room_key,
-            request_id,
-            record_bytes,
-        } => {
-            logging::info(
-                format!("Delegate received SignSecretVersion for room: {room_key:?}").as_str(),
-            );
-            handle_sign_request(ctx, origin, room_key, request_id, record_bytes)
-        }
-        OrderDelegateRequestMsg::SignEncryptedSecret {
-            room_key,
-            request_id,
-            secret_bytes,
-        } => {
-            logging::info(
-                format!("Delegate received SignEncryptedSecret for room: {room_key:?}").as_str(),
-            );
-            handle_sign_request(ctx, origin, room_key, request_id, secret_bytes)
-        }
-        OrderDelegateRequestMsg::SignUpgrade {
-            room_key,
-            request_id,
-            upgrade_bytes,
-        } => {
-            logging::info(format!("Delegate received SignUpgrade for room: {room_key:?}").as_str());
-            handle_sign_request(ctx, origin, room_key, request_id, upgrade_bytes)
+        PizzaDelegateRequest::Sign { request_id, data } => {
+            logging::info(&format!(
+                "Delegate received Sign request_id={}, data_len={}",
+                request_id,
+                data.len()
+            ));
+            handle_sign(ctx, origin, request_id, data)
         }
     }
 }
 
 // ============================================================================
-// Key-Value Storage Handlers
+// Contract Keys Handlers
 // ============================================================================
 
-/// Handle a store request - stores value and updates the index
-fn handle_store_request(
+/// Create storage key for contract keys
+fn contract_keys_storage_key(origin: &Origin) -> Vec<u8> {
+    format!("{}{}", origin.to_b58(), CONTRACT_KEYS_SUFFIX).into_bytes()
+}
+
+/// Handle store contract keys request
+fn handle_store_contract_keys(
     ctx: &mut DelegateCtx,
     origin: &Origin,
-    key: OrderDelegateKey,
-    value: Vec<u8>,
+    keys: Vec<String>,
 ) -> Result<Vec<OutboundDelegateMsg>, DelegateError> {
-    // Create a unique key for this origin's data
-    let secret_key = create_origin_key(origin, &key);
-    let index_key = create_index_key(origin);
+    let storage_key = contract_keys_storage_key(origin);
 
-    // Store the value directly via host function
-    // Note: In WASM, set_secret returns true on success. In non-WASM tests, it always returns false.
+    // Serialize the keys
+    let mut value = Vec::new();
+    ciborium::ser::into_writer(&keys, &mut value)
+        .map_err(|e| DelegateError::Deser(format!("Failed to serialize contract keys: {e}")))?;
+
+    // Store via host function
     #[cfg(target_family = "wasm")]
-    if !ctx.set_secret(&secret_key, &value) {
+    if !ctx.set_secret(&storage_key, &value) {
         return Err(DelegateError::Other(
-            "Failed to store secret via host function".into(),
+            "Failed to store contract keys via host function".into(),
         ));
     }
     #[cfg(not(target_family = "wasm"))]
-    let _ = ctx.set_secret(&secret_key, &value);
+    let _ = ctx.set_secret(&storage_key, &value);
 
-    logging::info(&format!(
-        "Stored secret with key length {}",
-        secret_key.len()
-    ));
+    logging::info(&format!("Stored {} contract keys", keys.len()));
 
-    // Update the key index
-    let mut key_index = get_key_index(ctx, &index_key);
-    if !key_index.keys.contains(&key) {
-        key_index.keys.push(key.clone());
-        set_key_index(ctx, &index_key, &key_index)?;
-        logging::info(&format!(
-            "Added key to index, now has {} keys",
-            key_index.keys.len()
-        ));
-    }
-
-    // Create response for the client
-    let response = OrderDelegateResponseMsg::StoreResponse {
-        key,
-        result: Ok(()),
-        value_size: value.len(),
-    };
-
+    let response = PizzaDelegateResponse::StoreContractKeysResponse { result: Ok(()) };
     Ok(vec![create_app_response(&response)?])
 }
 
-/// Handle a get request - retrieves value directly
-fn handle_get_request(
-    ctx: &mut DelegateCtx,
-    origin: &Origin,
-    key: OrderDelegateKey,
-) -> Result<Vec<OutboundDelegateMsg>, DelegateError> {
-    // Create a unique key for this origin's data
-    let secret_key = create_origin_key(origin, &key);
-
-    // Get the value directly via host function
-    let value = ctx.get_secret(&secret_key);
-    logging::info(&format!(
-        "Retrieved secret, value present: {}",
-        value.is_some()
-    ));
-
-    // Create response for the client
-    let response = OrderDelegateResponseMsg::GetResponse { key, value };
-
-    Ok(vec![create_app_response(&response)?])
-}
-
-/// Handle a delete request - removes value and updates the index
-fn handle_delete_request(
-    ctx: &mut DelegateCtx,
-    origin: &Origin,
-    key: OrderDelegateKey,
-) -> Result<Vec<OutboundDelegateMsg>, DelegateError> {
-    // Create keys
-    let secret_key = create_origin_key(origin, &key);
-    let index_key = create_index_key(origin);
-
-    // Remove the secret via host function
-    ctx.remove_secret(&secret_key);
-    logging::info("Removed secret");
-
-    // Update the key index
-    let mut key_index = get_key_index(ctx, &index_key);
-    key_index.keys.retain(|k| k != &key);
-    set_key_index(ctx, &index_key, &key_index)?;
-    logging::info(&format!(
-        "Removed key from index, now has {} keys",
-        key_index.keys.len()
-    ));
-
-    // Create response for the client
-    let response = OrderDelegateResponseMsg::DeleteResponse {
-        key,
-        result: Ok(()),
-    };
-
-    Ok(vec![create_app_response(&response)?])
-}
-
-/// Handle a list request - returns all keys for this origin
-fn handle_list_request(
+/// Handle get contract keys request
+fn handle_get_contract_keys(
     ctx: &mut DelegateCtx,
     origin: &Origin,
 ) -> Result<Vec<OutboundDelegateMsg>, DelegateError> {
-    let index_key = create_index_key(origin);
+    let storage_key = contract_keys_storage_key(origin);
 
-    // Get the key index directly
-    let key_index = get_key_index(ctx, &index_key);
-    logging::info(&format!(
-        "Returning list with {} keys",
-        key_index.keys.len()
-    ));
+    let keys = ctx
+        .get_secret(&storage_key)
+        .and_then(|data| ciborium::from_reader::<Vec<String>, _>(data.as_slice()).ok())
+        .unwrap_or_default();
 
-    // Create response for the client
-    let response = OrderDelegateResponseMsg::ListResponse {
-        keys: key_index.keys,
-    };
+    logging::info(&format!("Retrieved {} contract keys", keys.len()));
 
+    let response = PizzaDelegateResponse::GetContractKeysResponse { keys };
     Ok(vec![create_app_response(&response)?])
 }
 
 // ============================================================================
-// Signing Operations Handlers
-// ============================================================================
-//
-// SECURITY MODEL:
-//
-// Signing keys are stored and retrieved using origin attestation to ensure that
-// only the contract that stored a key can request signatures with it.
-//
-// The `attested` parameter passed to the delegate is cryptographically verified
-// by Freenet - it contains the ContractInstanceId of the webapp that sent the
-// message. This cannot be spoofed.
-//
-// Keys are stored under: "signing_key:{origin_base58}:{room_key_base58}"
-//
-// This means:
-// - When River (contract A) stores a signing key, it's stored under A's origin
-// - When River requests a signature, it looks up using A's origin -> found
-// - If malicious contract B requests a signature, it looks up using B's origin -> not found
-//
-// The private key never leaves the delegate. The UI only receives:
-// - Public keys (via GetPublicKey)
-// - Signatures (via Sign* operations)
-//
+// Signing Key Handlers
 // ============================================================================
 
-/// Create a secret key for storing a signing key for a room.
-/// Format: "signing_key:{origin_base58}:{room_key_base58}"
-fn create_signing_key_secret_key(origin: &Origin, room_key: &RoomKey) -> Vec<u8> {
-    let origin_b58 = bs58::encode(&origin.0).into_string();
-    let room_key_b58 = bs58::encode(room_key).into_string();
-    format!("signing_key:{origin_b58}:{room_key_b58}").into_bytes()
+/// Create storage key for signing key
+fn signing_key_storage_key(origin: &Origin) -> Vec<u8> {
+    format!("{}{}", origin.to_b58(), SIGNING_KEY_SUFFIX).into_bytes()
 }
 
-/// Handle a store signing key request
+/// Handle store signing key request
 fn handle_store_signing_key(
     ctx: &mut DelegateCtx,
     origin: &Origin,
-    room_key: RoomKey,
     signing_key_bytes: [u8; 32],
 ) -> Result<Vec<OutboundDelegateMsg>, DelegateError> {
-    let secret_key = create_signing_key_secret_key(origin, &room_key);
+    let storage_key = signing_key_storage_key(origin);
 
-    // Store the signing key directly via host function
-    // Note: In WASM, set_secret returns true on success. In non-WASM tests, it always returns false.
+    // Store via host function
     #[cfg(target_family = "wasm")]
-    if !ctx.set_secret(&secret_key, &signing_key_bytes) {
+    if !ctx.set_secret(&storage_key, &signing_key_bytes) {
         return Err(DelegateError::Other(
             "Failed to store signing key via host function".into(),
         ));
     }
     #[cfg(not(target_family = "wasm"))]
-    let _ = ctx.set_secret(&secret_key, &signing_key_bytes);
+    let _ = ctx.set_secret(&storage_key, &signing_key_bytes);
 
-    logging::info("Stored signing key for room");
+    logging::info("Stored signing key");
 
-    // Create response for the client
-    let response = OrderDelegateResponseMsg::StoreSigningKeyResponse {
-        room_key,
-        result: Ok(()),
-    };
-
+    let response = PizzaDelegateResponse::StoreSigningKeyResponse { result: Ok(()) };
     Ok(vec![create_app_response(&response)?])
 }
 
-/// Handle a get public key request
+/// Handle get public key request
 fn handle_get_public_key(
     ctx: &mut DelegateCtx,
     origin: &Origin,
-    room_key: RoomKey,
 ) -> Result<Vec<OutboundDelegateMsg>, DelegateError> {
-    let secret_key = create_signing_key_secret_key(origin, &room_key);
+    let storage_key = signing_key_storage_key(origin);
 
-    // Get the signing key directly via host function
-    let public_key = ctx.get_secret(&secret_key).and_then(|sk_bytes| {
+    let public_key = ctx.get_secret(&storage_key).and_then(|sk_bytes| {
         if sk_bytes.len() == 32 {
             let sk_array: [u8; 32] = sk_bytes.try_into().ok()?;
             let signing_key = SigningKey::from_bytes(&sk_array);
@@ -342,37 +151,29 @@ fn handle_get_public_key(
     });
 
     logging::info(&format!(
-        "Retrieved public key for room, key present: {}",
+        "Retrieved public key, present: {}",
         public_key.is_some()
     ));
 
-    // Create response for the client
-    let response = OrderDelegateResponseMsg::GetPublicKeyResponse {
-        room_key,
-        public_key,
-    };
-
+    let response = PizzaDelegateResponse::GetPublicKeyResponse { public_key };
     Ok(vec![create_app_response(&response)?])
 }
 
-/// Handle a sign request (for any signable type)
-fn handle_sign_request(
+/// Handle sign request
+fn handle_sign(
     ctx: &mut DelegateCtx,
     origin: &Origin,
-    room_key: RoomKey,
     request_id: RequestId,
-    data_to_sign: Vec<u8>,
+    data: Vec<u8>,
 ) -> Result<Vec<OutboundDelegateMsg>, DelegateError> {
-    let secret_key = create_signing_key_secret_key(origin, &room_key);
+    let storage_key = signing_key_storage_key(origin);
 
-    // Get the signing key and sign directly
-    let signature: Result<Vec<u8>, String> = match ctx.get_secret(&secret_key) {
+    let signature: Result<Vec<u8>, String> = match ctx.get_secret(&storage_key) {
         Some(sk_bytes) => {
             if sk_bytes.len() == 32 {
-                // Safe: we just checked length is 32
                 let sk_array: [u8; 32] = sk_bytes.try_into().expect("length verified");
                 let signing_key = SigningKey::from_bytes(&sk_array);
-                let sig = signing_key.sign(&data_to_sign);
+                let sig = signing_key.sign(&data);
                 Ok(sig.to_bytes().to_vec())
             } else {
                 Err(format!(
@@ -381,56 +182,19 @@ fn handle_sign_request(
                 ))
             }
         }
-        None => Err("Signing key not found for this room".to_string()),
+        None => Err("Signing key not found".to_string()),
     };
 
     logging::info(&format!(
-        "Sign request for room, signature created: {}",
+        "Sign request completed, success: {}",
         signature.is_ok()
     ));
 
-    // Create response for the client
-    let response = OrderDelegateResponseMsg::SignResponse {
-        room_key,
+    let response = PizzaDelegateResponse::SignResponse {
         request_id,
         signature,
     };
-
     Ok(vec![create_app_response(&response)?])
-}
-
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-/// Get the key index from secrets, or return empty if not found
-fn get_key_index(ctx: &mut DelegateCtx, index_key: &[u8]) -> KeyIndex {
-    ctx.get_secret(index_key)
-        .and_then(|data| ciborium::from_reader::<KeyIndex, _>(data.as_slice()).ok())
-        .unwrap_or_default()
-}
-
-/// Set the key index in secrets
-fn set_key_index(
-    ctx: &mut DelegateCtx,
-    index_key: &[u8],
-    key_index: &KeyIndex,
-) -> Result<(), DelegateError> {
-    let mut index_bytes = Vec::new();
-    ciborium::ser::into_writer(key_index, &mut index_bytes)
-        .map_err(|e| DelegateError::Deser(format!("Failed to serialize key index: {e}")))?;
-
-    // Note: In WASM, set_secret returns true on success. In non-WASM tests, it always returns false.
-    #[cfg(target_family = "wasm")]
-    if !ctx.set_secret(index_key, &index_bytes) {
-        return Err(DelegateError::Other(
-            "Failed to store key index via host function".into(),
-        ));
-    }
-    #[cfg(not(target_family = "wasm"))]
-    let _ = ctx.set_secret(index_key, &index_bytes);
-
-    Ok(())
 }
 
 // ============================================================================
@@ -448,7 +212,7 @@ mod tests {
     }
 
     /// Helper function to create an application message
-    fn create_app_message(request: OrderDelegateRequestMsg) -> ApplicationMessage {
+    fn create_app_message(request: PizzaDelegateRequest) -> ApplicationMessage {
         let mut payload = Vec::new();
         ciborium::ser::into_writer(&request, &mut payload)
             .map_err(|e| panic!("Failed to serialize request: {e}"))
@@ -462,7 +226,7 @@ mod tests {
     }
 
     /// Helper function to extract response from outbound messages
-    fn extract_response(messages: Vec<OutboundDelegateMsg>) -> Option<OrderDelegateResponseMsg> {
+    fn extract_response(messages: Vec<OutboundDelegateMsg>) -> Option<PizzaDelegateResponse> {
         for msg in messages {
             if let OutboundDelegateMsg::ApplicationMessage(app_msg) = msg {
                 return ciborium::from_reader(app_msg.payload.as_slice())
@@ -474,18 +238,13 @@ mod tests {
     }
 
     #[test]
-    fn test_store_request() {
-        let key = b"test_key".to_vec();
-        let value = b"test_value".to_vec();
-
-        let request = OrderDelegateRequestMsg::StoreRequest {
-            key: pizza_common::order_delegate::OrderDelegateKey(key.clone()),
-            value: value.clone(),
-        };
+    fn test_store_contract_keys() {
+        let keys = vec!["key1".to_string(), "key2".to_string()];
+        let request = PizzaDelegateRequest::StoreContractKeys { keys: keys.clone() };
         let app_msg = create_app_message(request);
         let inbound_msg = InboundDelegateMsg::ApplicationMessage(app_msg);
 
-        let result = crate::OrderDelegate::process(
+        let result = crate::PizzaDelegate::process(
             &mut DelegateCtx::default(),
             create_test_parameters(),
             get_test_origin(),
@@ -493,111 +252,24 @@ mod tests {
         )
         .unwrap();
 
-        // Should have 1 message: app response (secrets are stored via host function)
         assert_eq!(result.len(), 1);
 
-        // Check app response
         let response = extract_response(result).unwrap();
         match response {
-            OrderDelegateResponseMsg::StoreResponse {
-                key: resp_key,
-                result,
-                value_size,
-            } => {
-                assert_eq!(
-                    resp_key,
-                    pizza_common::order_delegate::OrderDelegateKey(key.clone())
-                );
-                assert!(result.is_ok());
-                assert_eq!(value_size, value.len());
-            }
-            _ => panic!("Expected StoreResponse, got {:?}", response),
-        }
-    }
-
-    #[test]
-    fn test_get_request() {
-        let key = b"test_key".to_vec();
-
-        let request = OrderDelegateRequestMsg::GetRequest {
-            key: pizza_common::order_delegate::OrderDelegateKey(key.clone()),
-        };
-        let app_msg = create_app_message(request);
-        let inbound_msg = InboundDelegateMsg::ApplicationMessage(app_msg);
-
-        let result = crate::OrderDelegate::process(
-            &mut DelegateCtx::default(),
-            create_test_parameters(),
-            get_test_origin(),
-            inbound_msg,
-        )
-        .unwrap();
-
-        // Should have 1 message: app response with the value (or None if not found)
-        assert_eq!(result.len(), 1);
-
-        // Check it's a GetResponse
-        let response = extract_response(result).unwrap();
-        match response {
-            OrderDelegateResponseMsg::GetResponse {
-                key: resp_key,
-                value: _,
-            } => {
-                assert_eq!(
-                    resp_key,
-                    pizza_common::order_delegate::OrderDelegateKey(key.clone())
-                );
-                // Value will be None in test since we didn't store it first
-            }
-            _ => panic!("Expected GetResponse, got {:?}", response),
-        }
-    }
-
-    #[test]
-    fn test_delete_request() {
-        let key = b"test_key".to_vec();
-
-        let request = OrderDelegateRequestMsg::DeleteRequest {
-            key: pizza_common::order_delegate::OrderDelegateKey(key.clone()),
-        };
-        let app_msg = create_app_message(request);
-        let inbound_msg = InboundDelegateMsg::ApplicationMessage(app_msg);
-
-        let result = crate::OrderDelegate::process(
-            &mut DelegateCtx::default(),
-            create_test_parameters(),
-            get_test_origin(),
-            inbound_msg,
-        )
-        .unwrap();
-
-        // Should have 1 message: app response
-        assert_eq!(result.len(), 1);
-
-        // Check response
-        let response = extract_response(result).unwrap();
-        match response {
-            OrderDelegateResponseMsg::DeleteResponse {
-                key: resp_key,
-                result,
-            } => {
-                assert_eq!(
-                    resp_key,
-                    pizza_common::order_delegate::OrderDelegateKey(key.clone())
-                );
+            PizzaDelegateResponse::StoreContractKeysResponse { result } => {
                 assert!(result.is_ok());
             }
-            _ => panic!("Expected DeleteResponse, got {:?}", response),
+            _ => panic!("Expected StoreContractKeysResponse, got {:?}", response),
         }
     }
 
     #[test]
-    fn test_list_request() {
-        let request = OrderDelegateRequestMsg::ListRequest;
+    fn test_get_contract_keys_empty() {
+        let request = PizzaDelegateRequest::GetContractKeys;
         let app_msg = create_app_message(request);
         let inbound_msg = InboundDelegateMsg::ApplicationMessage(app_msg);
 
-        let result = crate::OrderDelegate::process(
+        let result = crate::PizzaDelegate::process(
             &mut DelegateCtx::default(),
             create_test_parameters(),
             get_test_origin(),
@@ -605,30 +277,134 @@ mod tests {
         )
         .unwrap();
 
-        // Should have 1 message: app response with list
         assert_eq!(result.len(), 1);
 
-        // Check response
         let response = extract_response(result).unwrap();
         match response {
-            OrderDelegateResponseMsg::ListResponse { keys } => {
-                // Empty list since we haven't stored anything
+            PizzaDelegateResponse::GetContractKeysResponse { keys } => {
+                // Empty since we haven't stored anything (non-WASM test env)
                 assert!(keys.is_empty());
             }
-            _ => panic!("Expected ListResponse, got {:?}", response),
+            _ => panic!("Expected GetContractKeysResponse, got {:?}", response),
+        }
+    }
+
+    #[test]
+    fn test_store_signing_key() {
+        let signing_key_bytes: [u8; 32] = [8u8; 32];
+        let request = PizzaDelegateRequest::StoreSigningKey { signing_key_bytes };
+        let app_msg = create_app_message(request);
+        let inbound_msg = InboundDelegateMsg::ApplicationMessage(app_msg);
+
+        let result = crate::PizzaDelegate::process(
+            &mut DelegateCtx::default(),
+            create_test_parameters(),
+            get_test_origin(),
+            inbound_msg,
+        )
+        .unwrap();
+
+        assert_eq!(result.len(), 1);
+
+        let response = extract_response(result).unwrap();
+        match response {
+            PizzaDelegateResponse::StoreSigningKeyResponse { result } => {
+                assert!(result.is_ok());
+            }
+            _ => panic!("Expected StoreSigningKeyResponse, got {:?}", response),
+        }
+    }
+
+    #[test]
+    fn test_get_public_key_not_found() {
+        let request = PizzaDelegateRequest::GetPublicKey;
+        let app_msg = create_app_message(request);
+        let inbound_msg = InboundDelegateMsg::ApplicationMessage(app_msg);
+
+        let result = crate::PizzaDelegate::process(
+            &mut DelegateCtx::default(),
+            create_test_parameters(),
+            get_test_origin(),
+            inbound_msg,
+        )
+        .unwrap();
+
+        assert_eq!(result.len(), 1);
+
+        let response = extract_response(result).unwrap();
+        match response {
+            PizzaDelegateResponse::GetPublicKeyResponse { public_key } => {
+                // None since no key stored (non-WASM test env)
+                assert!(public_key.is_none());
+            }
+            _ => panic!("Expected GetPublicKeyResponse, got {:?}", response),
+        }
+    }
+
+    #[test]
+    fn test_sign_without_key() {
+        let request = PizzaDelegateRequest::Sign {
+            request_id: 123,
+            data: b"test data".to_vec(),
+        };
+        let app_msg = create_app_message(request);
+        let inbound_msg = InboundDelegateMsg::ApplicationMessage(app_msg);
+
+        let result = crate::PizzaDelegate::process(
+            &mut DelegateCtx::default(),
+            create_test_parameters(),
+            get_test_origin(),
+            inbound_msg,
+        )
+        .unwrap();
+
+        assert_eq!(result.len(), 1);
+
+        let response = extract_response(result).unwrap();
+        match response {
+            PizzaDelegateResponse::SignResponse {
+                request_id,
+                signature,
+            } => {
+                assert_eq!(request_id, 123);
+                assert!(signature.is_err());
+                assert!(signature.unwrap_err().contains("not found"));
+            }
+            _ => panic!("Expected SignResponse, got {:?}", response),
+        }
+    }
+
+    #[test]
+    fn test_error_on_missing_origin() {
+        let request = PizzaDelegateRequest::GetContractKeys;
+        let app_msg = create_app_message(request);
+        let inbound_msg = InboundDelegateMsg::ApplicationMessage(app_msg);
+
+        let result = crate::PizzaDelegate::process(
+            &mut DelegateCtx::default(),
+            create_test_parameters(),
+            None,
+            inbound_msg,
+        );
+
+        assert!(result.is_err());
+        if let Err(DelegateError::Other(msg)) = result {
+            assert!(msg.contains("missing message origin"));
+        } else {
+            panic!("Expected DelegateError::Other, got {:?}", result);
         }
     }
 
     #[test]
     fn test_error_on_processed_message() {
-        let request = OrderDelegateRequestMsg::ListRequest;
+        let request = PizzaDelegateRequest::GetContractKeys;
         let mut payload = Vec::new();
         ciborium::ser::into_writer(&request, &mut payload).unwrap();
 
         let app_msg = ApplicationMessage::new(payload).processed(true);
         let inbound_msg = InboundDelegateMsg::ApplicationMessage(app_msg);
 
-        let result = crate::OrderDelegate::process(
+        let result = crate::PizzaDelegate::process(
             &mut DelegateCtx::default(),
             create_test_parameters(),
             get_test_origin(),
@@ -640,147 +416,6 @@ mod tests {
             assert!(msg.contains("already processed"));
         } else {
             panic!("Expected DelegateError::Other, got {:?}", result);
-        }
-    }
-
-    #[test]
-    fn test_error_on_missing_origin() {
-        let request = OrderDelegateRequestMsg::ListRequest;
-        let app_msg = create_app_message(request);
-        let inbound_msg = InboundDelegateMsg::ApplicationMessage(app_msg);
-
-        // Pass None for origin
-        let result = crate::OrderDelegate::process(
-            &mut DelegateCtx::default(),
-            create_test_parameters(),
-            None,
-            inbound_msg,
-        );
-        assert!(result.is_err());
-
-        if let Err(DelegateError::Other(msg)) = result {
-            assert!(msg.contains("missing message origin"));
-        } else {
-            panic!("Expected DelegateError::Other, got {:?}", result);
-        }
-    }
-
-    #[test]
-    fn test_store_signing_key() {
-        let room_key: pizza_common::order_delegate::RoomKey = [7u8; 32];
-        let signing_key_bytes: [u8; 32] = [8u8; 32];
-
-        let request = OrderDelegateRequestMsg::StoreSigningKey {
-            room_key,
-            signing_key_bytes,
-        };
-        let app_msg = create_app_message(request);
-        let inbound_msg = InboundDelegateMsg::ApplicationMessage(app_msg);
-
-        let result = crate::OrderDelegate::process(
-            &mut DelegateCtx::default(),
-            create_test_parameters(),
-            get_test_origin(),
-            inbound_msg,
-        )
-        .unwrap();
-
-        // Should have 1 message: app response
-        assert_eq!(result.len(), 1);
-
-        // Check response
-        let response = extract_response(result).unwrap();
-        match response {
-            OrderDelegateResponseMsg::StoreSigningKeyResponse {
-                room_key: resp_room_key,
-                result,
-            } => {
-                assert_eq!(resp_room_key, room_key);
-                assert!(result.is_ok());
-            }
-            _ => panic!("Expected StoreSigningKeyResponse, got {:?}", response),
-        }
-    }
-
-    #[test]
-    fn test_get_public_key_not_found() {
-        let room_key: pizza_common::order_delegate::RoomKey = [9u8; 32];
-
-        let request = OrderDelegateRequestMsg::GetPublicKey { room_key };
-        let app_msg = create_app_message(request);
-        let inbound_msg = InboundDelegateMsg::ApplicationMessage(app_msg);
-
-        let result = crate::OrderDelegate::process(
-            &mut DelegateCtx::default(),
-            create_test_parameters(),
-            get_test_origin(),
-            inbound_msg,
-        )
-        .unwrap();
-
-        // Should have 1 message: app response
-        assert_eq!(result.len(), 1);
-
-        // Check response - public key should be None since no key is stored
-        let response = extract_response(result).unwrap();
-        match response {
-            OrderDelegateResponseMsg::GetPublicKeyResponse {
-                room_key: resp_room_key,
-                public_key,
-            } => {
-                assert_eq!(resp_room_key, room_key);
-                // In non-WASM test environment, get_secret returns None
-                assert!(public_key.is_none());
-            }
-            _ => panic!("Expected GetPublicKeyResponse, got {:?}", response),
-        }
-    }
-
-    #[test]
-    fn test_sign_message_without_key_returns_error() {
-        let room_key: pizza_common::order_delegate::RoomKey = [10u8; 32];
-        let request_id: pizza_common::order_delegate::RequestId = 12345;
-        let message_bytes = b"test message to sign".to_vec();
-
-        let request = OrderDelegateRequestMsg::SignMessage {
-            room_key,
-            request_id,
-            message_bytes,
-        };
-        let app_msg = create_app_message(request);
-        let inbound_msg = InboundDelegateMsg::ApplicationMessage(app_msg);
-
-        let result = crate::OrderDelegate::process(
-            &mut DelegateCtx::default(),
-            create_test_parameters(),
-            get_test_origin(),
-            inbound_msg,
-        )
-        .unwrap();
-
-        // Should have 1 message: app response
-        assert_eq!(result.len(), 1);
-
-        // Check response - signature should be an error since no key is stored
-        let response = extract_response(result).unwrap();
-        match response {
-            OrderDelegateResponseMsg::SignResponse {
-                room_key: resp_room_key,
-                request_id: resp_request_id,
-                signature,
-            } => {
-                assert_eq!(resp_room_key, room_key);
-                assert_eq!(resp_request_id, request_id);
-                // Should be an error because no signing key is stored
-                assert!(signature.is_err());
-                let err_msg = signature.unwrap_err();
-                assert!(
-                    err_msg.contains("not found"),
-                    "Expected 'not found' error, got: {}",
-                    err_msg
-                );
-            }
-            _ => panic!("Expected SignResponse, got {:?}", response),
         }
     }
 }

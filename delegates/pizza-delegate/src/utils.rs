@@ -1,27 +1,5 @@
 use super::*;
 
-/// Helper function to create a unique secret key for an origin's data
-pub(crate) fn create_origin_key(origin: &Origin, key: &OrderDelegateKey) -> Vec<u8> {
-    format!(
-        "{}{}{}",
-        origin.to_b58(),
-        ORIGIN_KEY_SEPARATOR,
-        String::from_utf8_lossy(key.as_bytes())
-    )
-    .into_bytes()
-}
-
-/// Helper function to create an index key for an origin
-pub(crate) fn create_index_key(origin: &Origin) -> Vec<u8> {
-    format!(
-        "{}{}{}",
-        origin.to_b58(),
-        ORIGIN_KEY_SEPARATOR,
-        KEY_INDEX_SUFFIX
-    )
-    .into_bytes()
-}
-
 /// Helper function to create an app response
 pub(crate) fn create_app_response<T: Serialize>(
     response: &T,

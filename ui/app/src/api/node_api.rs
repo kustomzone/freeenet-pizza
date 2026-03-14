@@ -879,7 +879,7 @@ fn handle_subscribe_response(key: ContractKey, subscribed: bool) {
 
 fn handle_delegate_response(values: Vec<freenet_stdlib::prelude::OutboundDelegateMsg>) {
     use freenet_stdlib::prelude::OutboundDelegateMsg;
-    use pizza_common::order_delegate::{OrderDelegateKey, OrderDelegateResponseMsg};
+    use pizza_common::order_delegate::PizzaDelegateResponse;
 
     info!(
         "Received delegate response containing {} values",
@@ -896,125 +896,71 @@ fn handle_delegate_response(values: Vec<freenet_stdlib::prelude::OutboundDelegat
                 );
 
                 // Try to deserialize as a response
-                match from_reader::<OrderDelegateResponseMsg, _>(app_msg.payload.as_slice()) {
+                match from_reader::<PizzaDelegateResponse, _>(app_msg.payload.as_slice()) {
                     Ok(response) => {
                         info!(
-                            "Successfully deserialized as OrderDelegateResponseMsg: {:?}",
+                            "Successfully deserialized PizzaDelegateResponse: {:?}",
                             response
                         );
 
                         // Try to complete any pending request waiting for this response
                         let completed = match &response {
-                            // Key-value storage responses
-                            OrderDelegateResponseMsg::GetResponse { key, .. } => {
-                                super::delegate_api::complete_pending_request(key, response.clone())
-                            }
-                            OrderDelegateResponseMsg::StoreResponse { key, .. } => {
-                                super::delegate_api::complete_pending_request(key, response.clone())
-                            }
-                            OrderDelegateResponseMsg::DeleteResponse { key, .. } => {
-                                super::delegate_api::complete_pending_request(key, response.clone())
-                            }
-                            OrderDelegateResponseMsg::ListResponse { .. } => {
-                                // Use the special list request key
-                                let list_key = OrderDelegateKey::new(b"__list_request__".to_vec());
-                                super::delegate_api::complete_pending_request(
-                                    &list_key,
+                            PizzaDelegateResponse::StoreContractKeysResponse { .. }
+                            | PizzaDelegateResponse::GetContractKeysResponse { .. } => {
+                                super::delegate_api::complete_pending_contract_keys_request(
                                     response.clone(),
                                 )
                             }
-                            // Signing key management responses
-                            OrderDelegateResponseMsg::StoreSigningKeyResponse {
-                                room_key, ..
-                            } => super::delegate_api::complete_pending_signing_key_request(
-                                room_key,
-                                response.clone(),
-                            ),
-                            OrderDelegateResponseMsg::GetPublicKeyResponse { room_key, .. } => {
+                            PizzaDelegateResponse::StoreSigningKeyResponse { .. } => {
+                                super::delegate_api::complete_pending_signing_key_request(
+                                    response.clone(),
+                                )
+                            }
+                            PizzaDelegateResponse::GetPublicKeyResponse { .. } => {
                                 super::delegate_api::complete_pending_public_key_request(
-                                    room_key,
                                     response.clone(),
                                 )
                             }
-                            // Signing response - use both room_key and request_id for correlation
-                            OrderDelegateResponseMsg::SignResponse {
-                                room_key,
-                                request_id,
-                                ..
-                            } => super::delegate_api::complete_pending_sign_request(
-                                room_key,
-                                *request_id,
-                                response.clone(),
-                            ),
+                            PizzaDelegateResponse::SignResponse { request_id, .. } => {
+                                super::delegate_api::complete_pending_sign_request(
+                                    *request_id,
+                                    response.clone(),
+                                )
+                            }
                         };
 
                         if completed {
                             info!("Completed pending delegate request");
                         }
 
-                        // Process the response based on its type for logging/state updates
+                        // Log based on response type
                         match response {
-                            OrderDelegateResponseMsg::GetResponse { key, value } => {
-                                info!(
-                                    "Got value for key: {:?}, value present: {}",
-                                    String::from_utf8_lossy(key.as_bytes()),
-                                    value.is_some()
-                                );
-                            }
-                            OrderDelegateResponseMsg::ListResponse { keys } => {
-                                info!("Listed {} keys", keys.len());
-                            }
-                            OrderDelegateResponseMsg::StoreResponse { key, result, .. } => {
+                            PizzaDelegateResponse::StoreContractKeysResponse { result } => {
                                 match result {
-                                    Ok(_) => info!(
-                                        "Successfully stored key: {:?}",
-                                        String::from_utf8_lossy(key.as_bytes())
-                                    ),
-                                    Err(e) => warn!(
-                                        "Failed to store key: {:?}, error: {}",
-                                        String::from_utf8_lossy(key.as_bytes()),
-                                        e
-                                    ),
+                                    Ok(_) => info!("Successfully stored contract keys"),
+                                    Err(e) => warn!("Failed to store contract keys: {}", e),
                                 }
                             }
-                            OrderDelegateResponseMsg::DeleteResponse { key, result } => {
+                            PizzaDelegateResponse::GetContractKeysResponse { keys } => {
+                                info!("Got {} contract keys", keys.len());
+                            }
+                            PizzaDelegateResponse::StoreSigningKeyResponse { result } => {
                                 match result {
-                                    Ok(_) => info!(
-                                        "Successfully deleted key: {:?}",
-                                        String::from_utf8_lossy(key.as_bytes())
-                                    ),
-                                    Err(e) => warn!(
-                                        "Failed to delete key: {:?}, error: {}",
-                                        String::from_utf8_lossy(key.as_bytes()),
-                                        e
-                                    ),
+                                    Ok(_) => info!("Successfully stored signing key"),
+                                    Err(e) => warn!("Failed to store signing key: {}", e),
                                 }
                             }
-                            // Signing key management responses
-                            OrderDelegateResponseMsg::StoreSigningKeyResponse {
-                                room_key,
-                                result,
-                            } => match result {
-                                Ok(_) => info!("Stored signing key for room: {:?}", room_key),
-                                Err(e) => warn!("Failed to store signing key: {}", e),
-                            },
-                            OrderDelegateResponseMsg::GetPublicKeyResponse {
-                                room_key,
-                                public_key,
-                            } => {
-                                info!(
-                                    "Got public key for room {:?}: present={}",
-                                    room_key,
-                                    public_key.is_some()
-                                );
+                            PizzaDelegateResponse::GetPublicKeyResponse { public_key } => {
+                                info!("Got public key: present={}", public_key.is_some());
                             }
-                            OrderDelegateResponseMsg::SignResponse {
-                                room_key,
+                            PizzaDelegateResponse::SignResponse {
+                                request_id,
                                 signature,
-                                ..
                             } => match signature {
-                                Ok(_) => info!("Got signature for room: {:?}", room_key),
-                                Err(e) => warn!("Failed to sign for room {:?}: {}", room_key, e),
+                                Ok(_) => info!("Got signature for request_id={}", request_id),
+                                Err(e) => {
+                                    warn!("Failed to sign request_id={}: {}", request_id, e)
+                                }
                             },
                         }
                     }
