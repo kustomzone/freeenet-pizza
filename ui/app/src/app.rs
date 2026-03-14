@@ -3,7 +3,7 @@ use ed25519_dalek::SigningKey;
 use std::collections::HashMap;
 
 use crate::api::{
-    connect_node_api, get_auth_token_from_window, NodeConfig, AUTH_TOKEN, NODE_HTTP_BASE,
+    connect_node_api, get_auth_token_from_window, get_websocket_url, NodeConfig,
 };
 use crate::components::{AboutPage, NewOrderDialog, OrderSettings, OrderViewComponent, Sidebar};
 pub(crate) use crate::services::{BaseService, Contract, FreenetService};
@@ -48,10 +48,7 @@ pub fn App() -> Element {
     get_auth_token_from_window();
 
     use_effect(|| {
-        let api_url = NODE_HTTP_BASE.read().clone();
-        let auth_token = AUTH_TOKEN.read().clone();
-        let api_url =
-            api_url.replace("http", "ws") + "/v1/contract/command?encodingProtocol=native";
+        let api_url = get_websocket_url();
         connect_node_api(&NodeConfig { api_url });
     });
 

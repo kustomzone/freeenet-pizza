@@ -35,8 +35,49 @@ pub const CONTRACT_WASM: &[u8] =
 // Global State Signals
 // ============================================================================
 
-/// HTTP base URL for the node
-pub static NODE_HTTP_BASE: GlobalSignal<String> = Global::new(|| "http://127.0.0.1:7509".into());
+/// HTTP base URL for the node (derived from window.location or fallback)
+pub static NODE_HTTP_BASE: GlobalSignal<String> = Global::new(|| {
+    get_http_base_url()
+});
+
+/// Fallback URL for non-browser environments
+const FALLBACK_HTTP_URL: &str = "http://localhost:7509";
+
+/// Get the HTTP base URL from window.location.
+/// This allows the app to work on any host/port, not just localhost:7509.
+fn get_http_base_url() -> String {
+    #[cfg(target_arch = "wasm32")]
+    {
+        if let Some(window) = web_sys::window() {
+            let location = window.location();
+            let protocol = location.protocol().unwrap_or_default();
+            let host = location.host().unwrap_or_default(); // includes port
+            return format!("{}//{}", protocol, host);
+        }
+    }
+    FALLBACK_HTTP_URL.to_string()
+}
+
+/// Get the WebSocket URL for connecting to the Freenet node.
+/// Derives the URL from the current window.location, allowing the app to work
+/// on any host/port (not just localhost:7509).
+pub fn get_websocket_url() -> String {
+    #[cfg(target_arch = "wasm32")]
+    {
+        if let Some(window) = web_sys::window() {
+            let location = window.location();
+            let protocol = location.protocol().unwrap_or_default();
+            let host = location.host().unwrap_or_default(); // includes port
+
+            let ws_protocol = if protocol == "https:" { "wss:" } else { "ws:" };
+            return format!(
+                "{}//{}/v1/contract/command?encodingProtocol=native",
+                ws_protocol, host
+            );
+        }
+    }
+    "ws://localhost:7509/v1/contract/command?encodingProtocol=native".to_string()
+}
 
 /// Authorization token from the Freenet gateway
 pub static AUTH_TOKEN: GlobalSignal<Option<String>> = Global::new(|| None);
