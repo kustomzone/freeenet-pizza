@@ -36,9 +36,7 @@ pub const CONTRACT_WASM: &[u8] =
 // ============================================================================
 
 /// HTTP base URL for the node (derived from window.location or fallback)
-pub static NODE_HTTP_BASE: GlobalSignal<String> = Global::new(|| {
-    get_http_base_url()
-});
+pub static NODE_HTTP_BASE: GlobalSignal<String> = Global::new(|| get_http_base_url());
 
 /// Fallback URL for non-browser environments
 const FALLBACK_HTTP_URL: &str = "http://localhost:7509";
@@ -900,15 +898,18 @@ fn handle_delegate_response(values: Vec<freenet_stdlib::prelude::OutboundDelegat
                             OrderDelegateResponseMsg::ListResponse { .. } => {
                                 // Use the special list request key
                                 let list_key = OrderDelegateKey::new(b"__list_request__".to_vec());
-                                super::delegate_api::complete_pending_request(&list_key, response.clone())
-                            }
-                            // Signing key management responses
-                            OrderDelegateResponseMsg::StoreSigningKeyResponse { room_key, .. } => {
-                                super::delegate_api::complete_pending_signing_key_request(
-                                    room_key,
+                                super::delegate_api::complete_pending_request(
+                                    &list_key,
                                     response.clone(),
                                 )
                             }
+                            // Signing key management responses
+                            OrderDelegateResponseMsg::StoreSigningKeyResponse {
+                                room_key, ..
+                            } => super::delegate_api::complete_pending_signing_key_request(
+                                room_key,
+                                response.clone(),
+                            ),
                             OrderDelegateResponseMsg::GetPublicKeyResponse { room_key, .. } => {
                                 super::delegate_api::complete_pending_public_key_request(
                                     room_key,
@@ -970,13 +971,17 @@ fn handle_delegate_response(values: Vec<freenet_stdlib::prelude::OutboundDelegat
                                 }
                             }
                             // Signing key management responses
-                            OrderDelegateResponseMsg::StoreSigningKeyResponse { room_key, result } => {
-                                match result {
-                                    Ok(_) => info!("Stored signing key for room: {:?}", room_key),
-                                    Err(e) => warn!("Failed to store signing key: {}", e),
-                                }
-                            }
-                            OrderDelegateResponseMsg::GetPublicKeyResponse { room_key, public_key } => {
+                            OrderDelegateResponseMsg::StoreSigningKeyResponse {
+                                room_key,
+                                result,
+                            } => match result {
+                                Ok(_) => info!("Stored signing key for room: {:?}", room_key),
+                                Err(e) => warn!("Failed to store signing key: {}", e),
+                            },
+                            OrderDelegateResponseMsg::GetPublicKeyResponse {
+                                room_key,
+                                public_key,
+                            } => {
                                 info!(
                                     "Got public key for room {:?}: present={}",
                                     room_key,

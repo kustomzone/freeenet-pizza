@@ -11,11 +11,11 @@ use std::sync::Mutex;
 use ciborium::{de::from_reader, ser::into_writer};
 use freenet_stdlib::client_api::ClientRequest::DelegateOp;
 use freenet_stdlib::client_api::DelegateRequest;
+use freenet_stdlib::prelude::tracing::{error, info};
 use freenet_stdlib::prelude::{
     ApplicationMessage, ContractInstanceId, Delegate, DelegateCode, DelegateContainer,
     DelegateWasmAPIVersion, InboundDelegateMsg, Parameters,
 };
-use freenet_stdlib::prelude::tracing::{error, info};
 use futures::channel::oneshot;
 use futures::future::{select, Either};
 use pizza_common::order_delegate::{
@@ -57,7 +57,10 @@ static PENDING_REQUESTS: std::sync::LazyLock<
 
 /// Complete a pending delegate request with the given response.
 /// Called by the response handler when a delegate response is received.
-pub fn complete_pending_request(key: &OrderDelegateKey, response: OrderDelegateResponseMsg) -> bool {
+pub fn complete_pending_request(
+    key: &OrderDelegateKey,
+    response: OrderDelegateResponseMsg,
+) -> bool {
     let key_bytes = key.as_bytes().to_vec();
     complete_pending_request_bytes(&key_bytes, response)
 }
@@ -377,7 +380,10 @@ pub async fn load_contract_keys() -> Result<Vec<String>, String> {
 }
 
 /// Store a signing key in the delegate.
-pub async fn store_signing_key(room_key: RoomKey, signing_key_bytes: [u8; 32]) -> Result<(), String> {
+pub async fn store_signing_key(
+    room_key: RoomKey,
+    signing_key_bytes: [u8; 32],
+) -> Result<(), String> {
     let request = OrderDelegateRequestMsg::StoreSigningKey {
         room_key,
         signing_key_bytes,

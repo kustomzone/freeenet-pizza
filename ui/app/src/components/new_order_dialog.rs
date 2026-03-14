@@ -4,8 +4,7 @@ use ed25519_dalek::SigningKey;
 
 #[component]
 pub fn NewOrderDialog(
-    #[allow(unused)]
-    sk: Signal<Option<SigningKey>>,
+    #[allow(unused)] sk: Signal<Option<SigningKey>>,
     on_create: EventHandler<OrderSettings>,
     on_close: EventHandler<()>,
 ) -> Element {

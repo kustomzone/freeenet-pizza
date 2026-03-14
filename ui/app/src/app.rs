@@ -2,9 +2,7 @@ use dioxus::prelude::*;
 use ed25519_dalek::SigningKey;
 use std::collections::HashMap;
 
-use crate::api::{
-    connect_node_api, get_auth_token_from_window, get_websocket_url, NodeConfig,
-};
+use crate::api::{connect_node_api, get_auth_token_from_window, get_websocket_url, NodeConfig};
 use crate::components::{AboutPage, NewOrderDialog, OrderSettings, OrderViewComponent, Sidebar};
 pub(crate) use crate::services::{BaseService, Contract, FreenetService};
 use chrono::Utc;
