@@ -1,7 +1,7 @@
 //! Build script for pizza-ui.
 //!
-//! This script compiles the pizza-contract to WASM and places it in a location
-//! where the UI can include it at compile time.
+//! This script compiles the pizza-contract and pizza-delegate to WASM and places
+//! them in locations where the UI can include them at compile time.
 
 use std::env;
 use std::fs;
@@ -9,8 +9,9 @@ use std::path::PathBuf;
 use std::process::Command;
 
 fn main() {
-    // Tell Cargo to rerun this build script if the contract source changes
+    // Tell Cargo to rerun this build script if the contract or delegate source changes
     println!("cargo:rerun-if-changed=../../contracts/pizza-contract/");
+    println!("cargo:rerun-if-changed=../../delegates/pizza-delegate/");
     println!("cargo:rerun-if-changed=../../common/");
 
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
@@ -21,13 +22,31 @@ fn main() {
         .unwrap()
         .to_path_buf();
 
-    let contract_dir = project_root.join("contracts/pizza-contract");
-    let build_dir = contract_dir.join("build");
+    // Build contract
+    build_wasm(
+        &project_root,
+        "pizza-contract",
+        "contracts/pizza-contract",
+        "pizza_contract.wasm",
+    );
+
+    // Build delegate
+    build_wasm(
+        &project_root,
+        "pizza-delegate",
+        "delegates/pizza-delegate",
+        "pizza_delegate.wasm",
+    );
+}
+
+fn build_wasm(project_root: &PathBuf, package: &str, subdir: &str, wasm_name: &str) {
+    let target_dir = project_root.join(subdir);
+    let build_dir = target_dir.join("build");
 
     // Create build directory if it doesn't exist
-    fs::create_dir_all(&build_dir).expect("Failed to create build directory");
+    fs::create_dir_all(&build_dir).expect(&format!("Failed to create build directory for {}", package));
 
-    // Build the contract WASM using cargo
+    // Build the WASM using cargo
     let status = Command::new("cargo")
         .args([
             "build",
@@ -35,51 +54,44 @@ fn main() {
             "--target",
             "wasm32-unknown-unknown",
             "-p",
-            "pizza-contract",
+            package,
         ])
-        .current_dir(&project_root)
+        .current_dir(project_root)
         .status();
 
     match status {
         Ok(s) if s.success() => {
             // Copy the WASM file to the build directory
-            let wasm_src =
-                project_root.join("target/wasm32-unknown-unknown/release/pizza_contract.wasm");
-            let wasm_dst = build_dir.join("pizza_contract.wasm");
-            println!("cargo:warning=Contract built at {:?}", wasm_src);
+            let wasm_src = project_root
+                .join("target/wasm32-unknown-unknown/release")
+                .join(wasm_name);
+            let wasm_dst = build_dir.join(wasm_name);
+            println!("cargo:warning={} built at {:?}", package, wasm_src);
 
             if wasm_src.exists() {
-                fs::copy(&wasm_src, &wasm_dst).expect("Failed to copy WASM file");
+                fs::copy(&wasm_src, &wasm_dst).expect(&format!("Failed to copy {} WASM file", package));
                 println!(
-                    "cargo:warning=Contract WASM built successfully at {:?}",
-                    wasm_dst
+                    "cargo:warning={} WASM built successfully at {:?}",
+                    package, wasm_dst
                 );
             } else {
-                // Create a placeholder file for initial compilation
-                create_placeholder_wasm(&wasm_dst);
+                panic!(
+                    "WASM file not found at {:?} after successful build. This should not happen.",
+                    wasm_src
+                );
             }
         }
         Ok(_) => {
-            eprintln!("cargo:warning=Contract build failed, using placeholder WASM");
-            create_placeholder_wasm(&build_dir.join("pizza_contract.wasm"));
+            panic!(
+                "{} build failed. Please fix the errors and try again.",
+                package
+            );
         }
         Err(e) => {
-            eprintln!(
-                "cargo:warning=Could not run cargo for contract build: {}",
-                e
+            panic!(
+                "Could not run cargo for {} build: {}. Make sure cargo is installed and in PATH.",
+                package, e
             );
-            create_placeholder_wasm(&build_dir.join("pizza_contract.wasm"));
         }
     }
-}
-
-fn create_placeholder_wasm(path: &PathBuf) {
-    // Create a minimal valid WASM file (magic bytes + version)
-    // This is just for compilation to succeed; actual WASM is needed at runtime
-    let minimal_wasm = [
-        0x00, 0x61, 0x73, 0x6D, // \0asm - WASM magic
-        0x01, 0x00, 0x00, 0x00, // version 1
-    ];
-    fs::write(path, &minimal_wasm).expect("Failed to create placeholder WASM");
-    println!("cargo:warning=Created placeholder WASM at {:?}", path);
 }
