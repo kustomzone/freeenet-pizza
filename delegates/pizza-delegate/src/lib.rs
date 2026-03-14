@@ -8,7 +8,7 @@ mod utils;
 use context::*;
 use freenet_stdlib::prelude::{
     delegate, ApplicationMessage, DelegateContext, DelegateCtx, DelegateError, DelegateInterface,
-    InboundDelegateMsg, OutboundDelegateMsg, Parameters,
+    InboundDelegateMsg, MessageOrigin, OutboundDelegateMsg, Parameters,
 };
 use handlers::*;
 use models::*;
@@ -31,7 +31,7 @@ impl DelegateInterface for OrderDelegate {
     fn process(
         ctx: &mut DelegateCtx,
         _parameters: Parameters<'static>,
-        attested: Option<&'static [u8]>,
+        origin: Option<MessageOrigin>,
         message: InboundDelegateMsg,
     ) -> Result<Vec<OutboundDelegateMsg>, DelegateError> {
         let message_type = match message {
@@ -41,17 +41,19 @@ impl DelegateInterface for OrderDelegate {
             InboundDelegateMsg::PutContractResponse(_) => "put contract response",
             InboundDelegateMsg::UpdateContractResponse(_) => "update contract response",
             InboundDelegateMsg::SubscribeContractResponse(_) => "subscribe contract response",
+            InboundDelegateMsg::ContractNotification(_) => "contract notification",
+            InboundDelegateMsg::DelegateMessage(_) => "delegate message",
         };
 
         logging::info(&format!("Delegate received message of type {message_type}"));
 
-        // Verify that attested is provided - this is the authenticated origin
-        let origin: Origin = match attested {
-            Some(origin) => Origin(origin.to_vec()),
+        // Verify that origin is provided - this is the authenticated origin
+        let caller_origin: Origin = match origin {
+            Some(MessageOrigin::WebApp(contract_id)) => Origin(contract_id.as_bytes().to_vec()),
             None => {
-                logging::info("Missing attested origin");
+                logging::info("Missing message origin");
                 return Err(DelegateError::Other(format!(
-                    "missing attested origin for message type: {:?}",
+                    "missing message origin for message type: {:?}",
                     message_type
                 )));
             }
@@ -65,7 +67,7 @@ impl DelegateInterface for OrderDelegate {
                         "cannot process an already processed message".into(),
                     ))
                 } else {
-                    handle_application_message(ctx, app_msg, &origin)
+                    handle_application_message(ctx, app_msg, &caller_origin)
                 }
             }
 
@@ -79,9 +81,11 @@ impl DelegateInterface for OrderDelegate {
             InboundDelegateMsg::GetContractResponse(_)
             | InboundDelegateMsg::PutContractResponse(_)
             | InboundDelegateMsg::UpdateContractResponse(_)
-            | InboundDelegateMsg::SubscribeContractResponse(_) => {
+            | InboundDelegateMsg::SubscribeContractResponse(_)
+            | InboundDelegateMsg::ContractNotification(_)
+            | InboundDelegateMsg::DelegateMessage(_) => {
                 logging::info(&format!(
-                    "Received unexpected contract response: {message_type}"
+                    "Received unexpected message type: {message_type}"
                 ));
                 Err(DelegateError::Other(format!(
                     "unexpected message type: {message_type}"

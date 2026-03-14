@@ -13,18 +13,14 @@ use freenet_stdlib::client_api::ClientRequest::DelegateOp;
 use freenet_stdlib::client_api::DelegateRequest;
 use freenet_stdlib::prelude::tracing::{error, info};
 use freenet_stdlib::prelude::{
-    ApplicationMessage, ContractInstanceId, Delegate, DelegateCode, DelegateContainer,
-    DelegateWasmAPIVersion, InboundDelegateMsg, Parameters,
+    ApplicationMessage, Delegate, DelegateCode, DelegateContainer, DelegateWasmAPIVersion,
+    InboundDelegateMsg, Parameters,
 };
 use futures::channel::oneshot;
 use futures::future::{select, Either};
 use pizza_common::order_delegate::{
     OrderDelegateKey, OrderDelegateRequestMsg, OrderDelegateResponseMsg, RequestId, RoomKey,
 };
-
-// Dummy contract instance ID used when sending messages to delegate
-// The delegate will receive the actual origin from the attested parameter
-const DUMMY_CONTRACT_ID: [u8; 32] = [0u8; 32];
 
 /// Delegate WASM bytes - embedded at compile time
 pub const DELEGATE_WASM: &[u8] =
@@ -227,8 +223,7 @@ pub async fn send_delegate_request(
     info!("Serialized request payload size: {} bytes", payload.len());
 
     let delegate_key = get_delegate_key();
-    let contract_id = ContractInstanceId::new(DUMMY_CONTRACT_ID);
-    let app_msg = ApplicationMessage::new(contract_id, payload);
+    let app_msg = ApplicationMessage::new(payload);
 
     // Prepare the delegate request
     let delegate_request = DelegateOp(DelegateRequest::ApplicationMessages {
@@ -276,8 +271,7 @@ pub fn fire_delegate_request(request: OrderDelegateRequestMsg) {
     }
 
     let delegate_key = get_delegate_key();
-    let contract_id = ContractInstanceId::new(DUMMY_CONTRACT_ID);
-    let app_msg = ApplicationMessage::new(contract_id, payload);
+    let app_msg = ApplicationMessage::new(payload);
 
     let delegate_request = DelegateOp(DelegateRequest::ApplicationMessages {
         key: delegate_key,

@@ -12,7 +12,7 @@ ciborium.workspace = true
 freenet-stdlib.workspace = true
 bs58 = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
-pizza-common = { path = "../../common" }
+pizza-common = { path = "../../common", default-features = false }
 ed25519-dalek = { workspace = true }
 
 [lib]
