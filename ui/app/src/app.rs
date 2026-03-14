@@ -217,6 +217,9 @@ fn AppContent() -> Element {
                     NewOrderDialog {
                         sk: sk_signal,
                         on_create: move |settings: OrderSettings| {
+                            // Close dialog immediately
+                            show_new_order.set(false);
+
                             let base = base_for_dialog.clone();
                             let sk_val = sk_val.clone();
                             let nav = navigator();
@@ -240,7 +243,6 @@ fn AppContent() -> Element {
                             // Spawn async task to publish the contract
                             spawn(async move {
                                 if let Ok(res) = base.publish_contract(contract).await {
-                                    show_new_order.set(false);
                                     // Navigate to the newly created order
                                     nav.push(Route::OrderPage { id: res.contract_key });
                                 }
