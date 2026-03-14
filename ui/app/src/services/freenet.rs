@@ -335,14 +335,14 @@ impl BaseInterface for FreenetService {
             // Publish the contract and get a receiver for the response
             let (contract_key, response_rx) = publish_contract_async(&state, &params);
 
+            // Save contract keys immediately - publishing may fail but we want to track it
+            let contract_keys = get_contract_keys();
+            FreenetService::save_contract_keys(&contract_keys).await;
+
             // Wait for the PUT response
             match response_rx.await {
                 Ok(response) => {
                     if response.success {
-                        // Save contract keys to delegate
-                        let contract_keys = get_contract_keys();
-                        FreenetService::save_contract_keys(&contract_keys).await;
-
                         // Subscribe to network updates for this contract
                         if let Some(subscribe_rx) = subscribe_to_contract_async(&contract_key) {
                             // Wait for subscription to be confirmed (with a reasonable timeout)
