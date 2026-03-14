@@ -150,6 +150,24 @@ impl FreenetService {
             error!("Failed to save contract keys to delegate: {}", e);
         }
     }
+
+    /// Load contract keys from delegate and fetch each contract from network.
+    /// This should be called after WebSocket connection is established.
+    pub async fn load_contracts_from_delegate() -> Result<Vec<String>, String> {
+        info!("Loading contract keys from delegate");
+
+        // Load contract keys from delegate
+        let keys = delegate_api::load_contract_keys().await?;
+        info!("Got {} contract keys from delegate", keys.len());
+
+        // Fetch each contract from the network
+        for key in &keys {
+            info!("Fetching contract from network: {}", key);
+            let _ = fetch_unknown_contract_async(key);
+        }
+
+        Ok(keys)
+    }
 }
 
 /// WASM-compatible sleep

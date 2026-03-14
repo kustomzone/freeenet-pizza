@@ -392,11 +392,14 @@ pub fn connect_node_api(config: &NodeConfig) {
             });
             wasm_bindgen_futures::JsFuture::from(promise).await.ok();
 
-            info!("Delegate ready, firing load requests");
+            info!("Delegate ready, loading contracts");
             *DELEGATE_READY.write() = true;
 
-            // Fire request to load contract keys from delegate
-            super::delegate_api::fire_load_contract_keys_request();
+            // Load contract keys from delegate and fetch contracts from network
+            match crate::services::freenet::FreenetService::load_contracts_from_delegate().await {
+                Ok(keys) => info!("Loaded {} contracts from delegate", keys.len()),
+                Err(e) => warn!("Failed to load contracts from delegate: {}", e),
+            }
         });
 
         // Flush any contract requests that were queued while connecting
@@ -943,11 +946,6 @@ fn handle_delegate_response(values: Vec<freenet_stdlib::prelude::OutboundDelegat
                             }
                             PizzaDelegateResponse::GetContractKeysResponse { keys } => {
                                 info!("Got {} contract keys from delegate", keys.len());
-                                // Fetch each contract from the network
-                                for key in keys {
-                                    info!("Fetching contract: {}", key);
-                                    let _ = fetch_unknown_contract_async(&key);
-                                }
                             }
                             PizzaDelegateResponse::StoreSigningKeyResponse { result } => {
                                 match result {
