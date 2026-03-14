@@ -93,6 +93,9 @@ pub enum ConnectionStatus {
 pub static CONNECTION_STATUS: GlobalSignal<ConnectionStatus> =
     Global::new(|| ConnectionStatus::Disconnected);
 
+/// Signal indicating when the delegate is ready to receive requests
+pub static DELEGATE_READY: GlobalSignal<bool> = Global::new(|| false);
+
 /// Stored contracts - maps contract key string to (state, parameters, ContractKey)
 pub static CONTRACTS: GlobalSignal<
     HashMap<String, (FullOrderStateV1, OrderParametersV1, ContractKey)>,
@@ -377,11 +380,28 @@ pub fn connect_node_api(config: &NodeConfig) {
         // Register the pizza delegate first
         super::delegate_api::register_delegate();
 
-        // Flush any requests that were queued while connecting
-        flush_pending_requests(&ws_for_open.borrow());
+        // Spawn a task to mark delegate as ready after a short delay
+        // This gives the node time to actually register the delegate
+        wasm_bindgen_futures::spawn_local(async {
+            // Wait 500ms for delegate registration to complete
+            let promise = js_sys::Promise::new(&mut |resolve, _| {
+                web_sys::window()
+                    .unwrap()
+                    .set_timeout_with_callback_and_timeout_and_arguments_0(&resolve, 500)
+                    .unwrap();
+            });
+            wasm_bindgen_futures::JsFuture::from(promise).await.ok();
 
-        // Fire request to load contract keys from delegate
-        super::delegate_api::fire_load_contract_keys_request();
+            info!("Delegate ready, firing load requests");
+            *DELEGATE_READY.write() = true;
+
+            // Fire request to load contract keys from delegate
+            super::delegate_api::fire_load_contract_keys_request();
+        });
+
+        // Flush any contract requests that were queued while connecting
+        // (but NOT delegate requests - those should wait for delegate to be ready)
+        flush_pending_requests(&ws_for_open.borrow());
 
         // Re-subscribe to all tracked subscriptions
         let subscribed_keys: Vec<String> =

@@ -2,7 +2,9 @@ use dioxus::prelude::*;
 use ed25519_dalek::SigningKey;
 use std::collections::HashMap;
 
-use crate::api::{connect_node_api, get_auth_token_from_window, get_websocket_url, NodeConfig};
+use crate::api::{
+    connect_node_api, get_auth_token_from_window, get_websocket_url, NodeConfig, DELEGATE_READY,
+};
 use crate::components::{AboutPage, NewOrderDialog, OrderSettings, OrderViewComponent, Sidebar};
 pub(crate) use crate::services::{BaseService, Contract, FreenetService};
 use chrono::Utc;
@@ -71,6 +73,12 @@ fn AppContent() -> Element {
     use_effect(move || {
         let base = base.clone();
         spawn(async move {
+            // Wait for delegate to be ready before initializing signing key
+            while !*DELEGATE_READY.read() {
+                gloo_timers::future::TimeoutFuture::new(100).await;
+            }
+            log::info!("Delegate ready, initializing signing key");
+
             // Initialize signing key from delegate
             match FreenetService::init_signing_key().await {
                 Ok(key) => {
