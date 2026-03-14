@@ -9,13 +9,13 @@ use std::collections::HashMap;
 #[component]
 pub fn Sidebar(
     contracts: Signal<HashMap<String, Contract>>,
-    sk: Signal<SigningKey>,
+    sk: Signal<Option<SigningKey>>,
     on_new_order: EventHandler<()>,
     on_delete: EventHandler<String>,
     selected_order_id: Option<String>,
     #[props(default = false)] loading: bool,
 ) -> Element {
-    let user_vk = sk.read().verifying_key();
+    let user_vk = sk.read().as_ref().map(|k| k.verifying_key());
     let connection_status = CONNECTION_STATUS.read();
     let mut sidebar_open = use_signal(|| false);
 
@@ -98,7 +98,7 @@ pub fn Sidebar(
                         {
                             let order_id = id.clone();
                             let is_active = selected_order_id.as_ref() == Some(&order_id);
-                            let is_admin = contract.parameters.owner == user_vk;
+                            let is_admin = user_vk.map(|vk| contract.parameters.owner == vk).unwrap_or(false);
 
                             let total_cents = contract.state.items.items.iter().filter_map(|ai| {
                                 match &ai.item.content {

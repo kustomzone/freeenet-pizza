@@ -4,7 +4,7 @@ use crate::components::{
 use crate::services::{BaseService, Contract};
 use crate::util::format_utc_as_full_datetime;
 use dioxus::prelude::*;
-use ed25519_dalek::VerifyingKey;
+use ed25519_dalek::{SigningKey, VerifyingKey};
 use futures::StreamExt;
 use pizza_common::order_state::{
     AuthorizedItemV1, AuthorizedOrderV1, AuthorizedPaidV1, ItemContentV1, ItemV1, Order, Paid,
@@ -22,8 +22,19 @@ enum LoadState {
 #[component]
 pub fn OrderViewComponent(id: String) -> Element {
     let base = use_context::<BaseService>();
-    let sk = base.get_private_key().unwrap();
-    let user_vk = base.get_public_key().unwrap();
+    let sk_signal = use_context::<Signal<Option<SigningKey>>>();
+    let sk_opt = sk_signal.read().clone();
+
+    // If signing key not ready yet, show loading
+    let Some(sk) = sk_opt else {
+        return rsx! {
+            div {
+                class: "loading",
+                "Loading signing key..."
+            }
+        };
+    };
+    let user_vk = sk.verifying_key();
 
     // Track the current id to detect changes
     let mut current_id = use_signal(|| id.clone());
