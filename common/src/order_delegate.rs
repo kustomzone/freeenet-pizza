@@ -13,6 +13,8 @@ pub enum PizzaDelegateRequest {
 
     /// Store the user's signing key (32 bytes)
     StoreSigningKey { signing_key_bytes: [u8; 32] },
+    /// Get the stored signing key (for local caching)
+    GetSigningKey,
     /// Get the public key for the stored signing key
     GetPublicKey,
     /// Sign arbitrary data with the stored signing key
@@ -32,6 +34,11 @@ pub enum PizzaDelegateResponse {
 
     /// Response to StoreSigningKey
     StoreSigningKeyResponse { result: Result<(), String> },
+    /// Response to GetSigningKey
+    GetSigningKeyResponse {
+        /// The signing key bytes if it exists
+        signing_key: Option<[u8; 32]>,
+    },
     /// Response to GetPublicKey
     GetPublicKeyResponse {
         /// The public key bytes if the signing key exists

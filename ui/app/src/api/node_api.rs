@@ -914,7 +914,8 @@ fn handle_delegate_response(values: Vec<freenet_stdlib::prelude::OutboundDelegat
                                     response.clone(),
                                 )
                             }
-                            PizzaDelegateResponse::StoreSigningKeyResponse { .. } => {
+                            PizzaDelegateResponse::StoreSigningKeyResponse { .. }
+                            | PizzaDelegateResponse::GetSigningKeyResponse { .. } => {
                                 super::delegate_api::complete_pending_signing_key_request(
                                     response.clone(),
                                 )
@@ -952,6 +953,9 @@ fn handle_delegate_response(values: Vec<freenet_stdlib::prelude::OutboundDelegat
                                     Ok(_) => info!("Successfully stored signing key"),
                                     Err(e) => warn!("Failed to store signing key: {}", e),
                                 }
+                            }
+                            PizzaDelegateResponse::GetSigningKeyResponse { signing_key } => {
+                                info!("Got signing key: present={}", signing_key.is_some());
                             }
                             PizzaDelegateResponse::GetPublicKeyResponse { public_key } => {
                                 info!("Got public key: present={}", public_key.is_some());

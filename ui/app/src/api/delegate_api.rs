@@ -103,6 +103,7 @@ fn get_request_key(request: &PizzaDelegateRequest) -> Vec<u8> {
         PizzaDelegateRequest::StoreContractKeys { .. } => CONTRACT_KEYS_KEY.to_vec(),
         PizzaDelegateRequest::GetContractKeys => CONTRACT_KEYS_KEY.to_vec(),
         PizzaDelegateRequest::StoreSigningKey { .. } => SIGNING_KEY_KEY.to_vec(),
+        PizzaDelegateRequest::GetSigningKey => SIGNING_KEY_KEY.to_vec(),
         PizzaDelegateRequest::GetPublicKey => PUBLIC_KEY_KEY.to_vec(),
         PizzaDelegateRequest::Sign { request_id, .. } => {
             let mut key = SIGN_PREFIX.to_vec();
@@ -280,6 +281,16 @@ pub async fn store_signing_key(signing_key_bytes: [u8; 32]) -> Result<(), String
 
     match send_delegate_request(request).await? {
         PizzaDelegateResponse::StoreSigningKeyResponse { result } => result,
+        other => Err(format!("Unexpected response: {:?}", other)),
+    }
+}
+
+/// Get the stored signing key from the delegate.
+pub async fn get_signing_key() -> Result<Option<[u8; 32]>, String> {
+    let request = PizzaDelegateRequest::GetSigningKey;
+
+    match send_delegate_request(request).await? {
+        PizzaDelegateResponse::GetSigningKeyResponse { signing_key } => Ok(signing_key),
         other => Err(format!("Unexpected response: {:?}", other)),
     }
 }

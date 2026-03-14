@@ -29,6 +29,10 @@ pub(crate) fn handle_application_message(
             logging::info("Delegate received StoreSigningKey");
             handle_store_signing_key(ctx, origin, signing_key_bytes)
         }
+        PizzaDelegateRequest::GetSigningKey => {
+            logging::info("Delegate received GetSigningKey");
+            handle_get_signing_key(ctx, origin)
+        }
         PizzaDelegateRequest::GetPublicKey => {
             logging::info("Delegate received GetPublicKey");
             handle_get_public_key(ctx, origin)
@@ -130,6 +134,31 @@ fn handle_store_signing_key(
     logging::info("Stored signing key");
 
     let response = PizzaDelegateResponse::StoreSigningKeyResponse { result: Ok(()) };
+    Ok(vec![create_app_response(&response)?])
+}
+
+/// Handle get signing key request (returns the stored signing key for local caching)
+fn handle_get_signing_key(
+    ctx: &mut DelegateCtx,
+    origin: &Origin,
+) -> Result<Vec<OutboundDelegateMsg>, DelegateError> {
+    let storage_key = signing_key_storage_key(origin);
+
+    let signing_key = ctx.get_secret(&storage_key).and_then(|sk_bytes| {
+        if sk_bytes.len() == 32 {
+            let sk_array: [u8; 32] = sk_bytes.try_into().ok()?;
+            Some(sk_array)
+        } else {
+            None
+        }
+    });
+
+    logging::info(&format!(
+        "Retrieved signing key, present: {}",
+        signing_key.is_some()
+    ));
+
+    let response = PizzaDelegateResponse::GetSigningKeyResponse { signing_key };
     Ok(vec![create_app_response(&response)?])
 }
 

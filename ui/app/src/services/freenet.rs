@@ -81,19 +81,21 @@ impl FreenetService {
 
         info!("Initializing signing key from delegate");
 
-        // Try to get the public key first to check if signing key exists
-        match delegate_api::get_public_key().await {
-            Ok(Some(_public_key)) => {
-                // Signing key exists in delegate - we can't retrieve the private key,
-                // but we can use the delegate for signing operations.
-                // For now, generate a local key and store it
-                info!("Found existing public key in delegate");
+        // Try to get existing signing key from delegate
+        match delegate_api::get_signing_key().await {
+            Ok(Some(key_bytes)) => {
+                // Signing key exists in delegate - use it
+                info!("Found existing signing key in delegate");
+                let signing_key = SigningKey::from_bytes(&key_bytes);
+                *CACHED_SIGNING_KEY.write() = Some(signing_key.clone());
+                *SIGNING_KEY_LOADED.write() = true;
+                return Ok(signing_key);
             }
             Ok(None) => {
                 info!("No signing key in delegate, will generate new one");
             }
             Err(e) => {
-                warn!("Failed to check for existing key: {}", e);
+                warn!("Failed to get signing key from delegate: {}", e);
             }
         }
 
