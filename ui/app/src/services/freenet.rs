@@ -1,22 +1,27 @@
 //! Freenet Service - High-level service for managing pizza order contracts on Freenet.
 //!
 //! This service implements the BaseInterface trait using the Freenet node API
-//! for publishing, subscribing, and updating contracts.
+//! for publishing, subscribing, and updating contracts. All private state
+//! (signing keys, contract keys) is stored in the delegate, not localStorage.
 
 use std::error::Error;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use dioxus::prelude::ReadableExt;
+use dioxus::signals::{Global, GlobalSignal};
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
+use freenet_stdlib::prelude::tracing::{error, info, warn};
 use freenet_stdlib::prelude::ContractKey;
 use futures::Stream;
 use futures::StreamExt;
+use pizza_common::order_delegate::RoomKey;
 use pizza_common::{ComposableState, FullOrderStateV1, FullOrderStateV1Delta, OrderParametersV1};
-use web_sys::Storage;
 
 use super::base::{
     AsyncResult, BaseInterface, Contract, PublishContractResponse, PublishDeltaResponse,
 };
+use crate::api::delegate_api;
 use crate::api::node_api::{
     fetch_unknown_contract_async, get_contract_by_key_async, get_contract_keys,
     get_contract_state_cached, notify_contract_list_change, notify_contract_update,
@@ -24,120 +29,150 @@ use crate::api::node_api::{
     subscribe_to_contract_list, subscribe_to_contract_updates, CONTRACTS,
 };
 
-/// Private key storage key in browser storage (for key persistence across sessions)
-const PRIVATE_KEY_KEY: &str = "pizza_private_key";
-/// Contract list storage key (stores list of contract key strings)
-const CONTRACT_LIST_KEY: &str = "pizza_contract_keys";
+/// Default room key (all zeros) used for single-user signing key storage.
+/// In pizza app, we only have one user per instance, so we use a fixed room key.
+const DEFAULT_ROOM_KEY: RoomKey = [0u8; 32];
+
+/// Global signal to track if we have loaded the signing key from delegate.
+pub static SIGNING_KEY_LOADED: GlobalSignal<bool> = Global::new(|| false);
+
+/// Global signal to store the cached signing key once loaded.
+pub static CACHED_SIGNING_KEY: GlobalSignal<Option<SigningKey>> = Global::new(|| None);
+
+/// Track if we've already requested the signing key from delegate
+static SIGNING_KEY_REQUESTED: AtomicBool = AtomicBool::new(false);
 
 /// FreenetService implements the BaseInterface trait using the Freenet node API.
 ///
-/// Unlike LocalStorageService, this service:
+/// Unlike previous versions, this service:
 /// - Publishes contracts to the Freenet network via PUT requests
 /// - Subscribes to contract updates via WebSocket notifications
 /// - Sends state updates to the network
-/// - Uses browser storage for private key and contract key list persistence
+/// - Uses delegate for private key and contract key storage (NO localStorage)
 /// - Awaits network acknowledgements for operations
 #[derive(Clone)]
-pub struct FreenetService {
-    /// The user's signing key (persisted in browser storage)
-    signing_key: SigningKey,
-    /// Browser localStorage handle
-    storage: Storage,
-}
+pub struct FreenetService;
 
 impl FreenetService {
     /// Create a new FreenetService.
-    ///
-    /// This will load the signing key from browser storage or generate a new one.
     pub fn new() -> Result<Self, Box<dyn Error>> {
-        let window = web_sys::window().ok_or("no window")?;
-        let storage = window
-            .local_storage()
-            .map_err(|e| format!("{:?}", e))?
-            .ok_or("no local storage")?;
-
-        let signing_key = Self::load_or_create_signing_key(&storage)?;
-
-        Ok(Self {
-            signing_key,
-            storage,
-        })
+        Ok(Self)
     }
 
-    /// Load the signing key from browser storage or create a new one.
-    fn load_or_create_signing_key(storage: &Storage) -> Result<SigningKey, Box<dyn Error>> {
-        match storage
-            .get_item(PRIVATE_KEY_KEY)
-            .map_err(|e| format!("{:?}", e))?
-        {
-            Some(hex_key) => {
-                let bytes = hex::decode(hex_key)?;
-                let bytes: [u8; 32] = bytes.try_into().map_err(|_| "invalid private key length")?;
-                Ok(SigningKey::from_bytes(&bytes))
+    /// Initialize the signing key - either load from delegate or generate a new one.
+    /// This should be called during app initialization.
+    pub async fn init_signing_key() -> Result<SigningKey, String> {
+        // Check if already loaded
+        if *SIGNING_KEY_LOADED.read() {
+            if let Some(ref key) = *CACHED_SIGNING_KEY.read() {
+                return Ok(key.clone());
             }
-            None => {
-                let mut rng = rand::thread_rng();
-                let signing_key = SigningKey::generate(&mut rng);
-                let hex_key = hex::encode(signing_key.to_bytes());
-                storage
-                    .set_item(PRIVATE_KEY_KEY, &hex_key)
-                    .map_err(|e| format!("{:?}", e))?;
-                Ok(signing_key)
+        }
+
+        // Prevent duplicate requests
+        if SIGNING_KEY_REQUESTED.swap(true, Ordering::SeqCst) {
+            // Another request is in progress, wait for it
+            for _ in 0..100 {
+                // Wait up to 10 seconds
+                sleep_ms(100).await;
+                if *SIGNING_KEY_LOADED.read() {
+                    if let Some(ref key) = *CACHED_SIGNING_KEY.read() {
+                        return Ok(key.clone());
+                    }
+                }
             }
+            return Err("Timeout waiting for signing key initialization".to_string());
+        }
+
+        info!("Initializing signing key from delegate");
+
+        // Try to get the public key first to check if signing key exists
+        match delegate_api::get_public_key(DEFAULT_ROOM_KEY).await {
+            Ok(Some(_public_key)) => {
+                // Signing key exists in delegate - we can't retrieve the private key,
+                // but we can use the delegate for signing operations.
+                // For now, generate a local key and store it
+                info!("Found existing public key in delegate");
+            }
+            Ok(None) => {
+                info!("No signing key in delegate, will generate new one");
+            }
+            Err(e) => {
+                warn!("Failed to check for existing key: {}", e);
+            }
+        }
+
+        // Generate new signing key and store in delegate
+        let mut rng = rand::thread_rng();
+        let signing_key = SigningKey::generate(&mut rng);
+
+        // Store the signing key in the delegate
+        match delegate_api::store_signing_key(DEFAULT_ROOM_KEY, signing_key.to_bytes()).await {
+            Ok(()) => {
+                info!("Stored new signing key in delegate");
+            }
+            Err(e) => {
+                warn!(
+                    "Failed to store signing key in delegate: {}, using local key",
+                    e
+                );
+            }
+        }
+
+        // Cache the signing key
+        *CACHED_SIGNING_KEY.write() = Some(signing_key.clone());
+        *SIGNING_KEY_LOADED.write() = true;
+
+        Ok(signing_key)
+    }
+
+    /// Get the signing key, initializing if needed.
+    pub async fn get_signing_key_async() -> Result<SigningKey, String> {
+        // Check cache first
+        if *SIGNING_KEY_LOADED.read() {
+            if let Some(ref key) = *CACHED_SIGNING_KEY.read() {
+                return Ok(key.clone());
+            }
+        }
+
+        // Initialize if not yet done
+        Self::init_signing_key().await
+    }
+
+    /// Get the cached signing key synchronously.
+    /// Returns None if signing key hasn't been initialized yet.
+    pub fn get_signing_key_cached() -> Option<SigningKey> {
+        if *SIGNING_KEY_LOADED.read() {
+            CACHED_SIGNING_KEY.read().clone()
+        } else {
+            None
         }
     }
 
-    /// Load contract keys from localStorage.
-    fn load_contract_keys(&self) -> Vec<String> {
-        match self.storage.get_item(CONTRACT_LIST_KEY) {
-            Ok(Some(json)) => serde_json::from_str(&json).unwrap_or_default(),
-            _ => Vec::new(),
+    /// Save contract keys to delegate
+    async fn save_contract_keys(keys: &[String]) {
+        if let Err(e) = delegate_api::store_contract_keys(keys).await {
+            error!("Failed to save contract keys to delegate: {}", e);
         }
     }
 }
 
-/// Static helper to save a contract key to localStorage (for use in async blocks).
-fn save_contract_key_static(storage: &Storage, key: &str) {
-    // Load current list
-    let mut contract_keys: Vec<String> = match storage.get_item(CONTRACT_LIST_KEY) {
-        Ok(Some(json)) => serde_json::from_str(&json).unwrap_or_default(),
-        _ => Vec::new(),
-    };
-
-    // Add new key if not present
-    if !contract_keys.contains(&key.to_string()) {
-        contract_keys.push(key.to_string());
-        if let Ok(json) = serde_json::to_string(&contract_keys) {
-            let _ = storage.set_item(CONTRACT_LIST_KEY, &json);
-        }
-    }
-}
-
-/// Static helper to remove a contract key from localStorage.
-fn remove_contract_key_static(storage: &Storage, key: &str) {
-    let mut contract_keys: Vec<String> = match storage.get_item(CONTRACT_LIST_KEY) {
-        Ok(Some(json)) => serde_json::from_str(&json).unwrap_or_default(),
-        _ => Vec::new(),
-    };
-
-    contract_keys.retain(|k| k != key);
-
-    if let Ok(json) = serde_json::to_string(&contract_keys) {
-        let _ = storage.set_item(CONTRACT_LIST_KEY, &json);
-    }
+/// WASM-compatible sleep
+async fn sleep_ms(ms: u32) {
+    let promise = js_sys::Promise::new(&mut |resolve, _| {
+        web_sys::window()
+            .unwrap()
+            .set_timeout_with_callback_and_timeout_and_arguments_0(&resolve, ms as i32)
+            .unwrap();
+    });
+    wasm_bindgen_futures::JsFuture::from(promise).await.ok();
 }
 
 impl BaseInterface for FreenetService {
-    /// Returns a list of contract IDs (keys) from localStorage and local cache.
+    /// Returns a list of contract IDs (keys) from local cache.
+    /// Contract keys are loaded from delegate on connection, stored in CONTRACTS.
     fn get_contracts(&self) -> Result<Vec<String>, Box<dyn Error>> {
-        // Merge keys from localStorage with in-memory cache
-        let mut keys = self.load_contract_keys();
-        for key in get_contract_keys() {
-            if !keys.contains(&key) {
-                keys.push(key);
-            }
-        }
-        Ok(keys)
+        Ok(get_contract_keys())
     }
 
     /// Returns parameters and state for a given contract ID from the local cache.
@@ -148,7 +183,6 @@ impl BaseInterface for FreenetService {
     /// Fetch contract state from Freenet via GET request.
     /// If the contract is unknown, attempts to fetch it from the network.
     fn get_contract_async(&self, id: String) -> AsyncResult<Contract> {
-        let storage = self.storage.clone();
         Box::pin(async move {
             // Check if we have it cached first
             if let Some((state, params)) = get_contract_state_cached(&id) {
@@ -184,8 +218,9 @@ impl BaseInterface for FreenetService {
                         // Contract was found and cached by handle_get_response
                         // Get the params from the cache now
                         if let Some((_, params)) = get_contract_state_cached(&id) {
-                            // Save contract key to localStorage for future sessions
-                            save_contract_key_static(&storage, &id);
+                            // Save contract key to delegate for future sessions
+                            let contract_keys = get_contract_keys();
+                            FreenetService::save_contract_keys(&contract_keys).await;
 
                             // Subscribe to updates for this newly fetched contract
                             let _ = subscribe_to_contract_async(&id);
@@ -267,18 +302,29 @@ impl BaseInterface for FreenetService {
 
     /// Returns the user's public key (verifying key).
     fn get_public_key(&self) -> Result<VerifyingKey, Box<dyn Error>> {
-        Ok(self.signing_key.verifying_key())
+        match Self::get_signing_key_cached() {
+            Some(signing_key) => Ok(signing_key.verifying_key()),
+            None => Err("Signing key not yet initialized".into()),
+        }
     }
 
     /// Returns the user's private key (signing key).
     fn get_private_key(&self) -> Result<SigningKey, Box<dyn Error>> {
-        Ok(self.signing_key.clone())
+        match Self::get_signing_key_cached() {
+            Some(signing_key) => Ok(signing_key),
+            None => Err("Signing key not yet initialized".into()),
+        }
     }
 
     /// Signs a message with the user's private key.
     fn sign_message(&self, message: &[u8]) -> Result<Vec<u8>, Box<dyn Error>> {
-        let signature: Signature = self.signing_key.sign(message);
-        Ok(signature.to_bytes().to_vec())
+        match Self::get_signing_key_cached() {
+            Some(signing_key) => {
+                let signature: Signature = signing_key.sign(message);
+                Ok(signature.to_bytes().to_vec())
+            }
+            None => Err("Signing key not yet initialized".into()),
+        }
     }
 
     /// Publish a new contract to the Freenet network.
@@ -289,7 +335,6 @@ impl BaseInterface for FreenetService {
     fn publish_contract(&self, contract: Contract) -> AsyncResult<PublishContractResponse> {
         let state = contract.state;
         let params = contract.parameters;
-        let storage = self.storage.clone();
 
         Box::pin(async move {
             // Publish the contract and get a receiver for the response
@@ -299,8 +344,9 @@ impl BaseInterface for FreenetService {
             match response_rx.await {
                 Ok(response) => {
                     if response.success {
-                        // Save contract key to localStorage
-                        save_contract_key_static(&storage, &response.contract_key);
+                        // Save contract keys to delegate
+                        let contract_keys = get_contract_keys();
+                        FreenetService::save_contract_keys(&contract_keys).await;
 
                         // Subscribe to network updates for this contract
                         if let Some(subscribe_rx) = subscribe_to_contract_async(&contract_key) {
@@ -349,15 +395,19 @@ impl BaseInterface for FreenetService {
 
     /// Remove a contract from the local list.
     ///
-    /// This removes the contract from localStorage but does not delete it from the network.
+    /// This removes the contract from the delegate but does not delete it from the network.
     fn remove_contract(&self, id: String) {
-        remove_contract_key_static(&self.storage, &id);
-
         // Remove from in-memory cache
         {
             let mut contracts = CONTRACTS.write();
             contracts.remove(&id);
         }
+
+        // Save updated contract keys to delegate
+        let contract_keys = get_contract_keys();
+        wasm_bindgen_futures::spawn_local(async move {
+            FreenetService::save_contract_keys(&contract_keys).await;
+        });
 
         // Notify subscribers of the change
         let keys = get_contract_keys();

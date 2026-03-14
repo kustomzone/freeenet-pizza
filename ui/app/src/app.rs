@@ -7,7 +7,6 @@ use crate::api::{
 use crate::components::{AboutPage, NewOrderDialog, OrderSettings, OrderViewComponent, Sidebar};
 pub(crate) use crate::services::{BaseService, Contract, FreenetService};
 use chrono::Utc;
-use ed25519_dalek::{SigningKey, VerifyingKey};
 use futures::{FutureExt, StreamExt};
 use pizza_common::order_state::*;
 

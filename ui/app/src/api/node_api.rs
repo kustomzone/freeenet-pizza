@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use ciborium::{de::from_reader, ser::into_writer};
 use dioxus::prelude::ReadableExt;
-use dioxus::signals::{Global, GlobalSignal, Writable};
+use dioxus::signals::{Global, GlobalSignal};
 use freenet_stdlib::client_api::{
     ClientRequest, ContractRequest, ContractResponse, HostResponse, QueryResponse,
 };
@@ -237,7 +237,7 @@ pub fn notify_contract_list_change(contracts: Vec<String>) {
 thread_local! {
     static CURRENT_WS: RefCell<Option<Rc<RefCell<WebSocket>>>> = const { RefCell::new(None) };
     /// Queue of serialized requests to send once the WebSocket connection is established
-    static PENDING_SEND_QUEUE: RefCell<Vec<Vec<u8>>> = const { RefCell::new(Vec::new()) };
+    pub static PENDING_SEND_QUEUE: RefCell<Vec<Vec<u8>>> = const { RefCell::new(Vec::new()) };
 }
 
 fn set_current_ws(ws: Rc<RefCell<WebSocket>>) {
@@ -335,8 +335,14 @@ pub fn connect_node_api(config: &NodeConfig) {
         *CONNECTION_STATUS.write() = ConnectionStatus::Connected;
         set_current_ws(ws_for_open.clone());
 
+        // Register the pizza delegate first
+        super::delegate_api::register_delegate();
+
         // Flush any requests that were queued while connecting
         flush_pending_requests(&ws_for_open.borrow());
+
+        // Fire request to load contract keys from delegate
+        super::delegate_api::fire_load_contract_keys_request();
 
         // Re-subscribe to all tracked subscriptions
         let subscribed_keys: Vec<String> =
@@ -502,6 +508,9 @@ fn handle_host_response(bytes: &[u8]) {
     match response {
         HostResponse::ContractResponse(contract_response) => {
             handle_contract_response(contract_response);
+        }
+        HostResponse::DelegateResponse { key: _, values } => {
+            handle_delegate_response(values);
         }
         HostResponse::QueryResponse(QueryResponse::NodeDiagnostics(diag)) => {
             debug!("Received diagnostics: {:?}", diag);
@@ -806,6 +815,152 @@ fn handle_subscribe_response(key: ContractKey, subscribed: bool) {
         send_request_current(&request);
     } else {
         warn!("Failed to subscribe to contract: {}", key_str);
+    }
+}
+
+fn handle_delegate_response(values: Vec<freenet_stdlib::prelude::OutboundDelegateMsg>) {
+    use freenet_stdlib::prelude::OutboundDelegateMsg;
+    use pizza_common::order_delegate::{OrderDelegateKey, OrderDelegateResponseMsg};
+
+    info!(
+        "Received delegate response containing {} values",
+        values.len()
+    );
+
+    for (i, v) in values.iter().enumerate() {
+        debug!("Processing delegate response value #{}", i);
+        match v {
+            OutboundDelegateMsg::ApplicationMessage(app_msg) => {
+                debug!(
+                    "Delegate response is an ApplicationMessage, processed flag: {}",
+                    app_msg.processed
+                );
+
+                // Try to deserialize as a response
+                match from_reader::<OrderDelegateResponseMsg, _>(app_msg.payload.as_slice()) {
+                    Ok(response) => {
+                        info!(
+                            "Successfully deserialized as OrderDelegateResponseMsg: {:?}",
+                            response
+                        );
+
+                        // Try to complete any pending request waiting for this response
+                        let completed = match &response {
+                            // Key-value storage responses
+                            OrderDelegateResponseMsg::GetResponse { key, .. } => {
+                                super::delegate_api::complete_pending_request(key, response.clone())
+                            }
+                            OrderDelegateResponseMsg::StoreResponse { key, .. } => {
+                                super::delegate_api::complete_pending_request(key, response.clone())
+                            }
+                            OrderDelegateResponseMsg::DeleteResponse { key, .. } => {
+                                super::delegate_api::complete_pending_request(key, response.clone())
+                            }
+                            OrderDelegateResponseMsg::ListResponse { .. } => {
+                                // Use the special list request key
+                                let list_key = OrderDelegateKey::new(b"__list_request__".to_vec());
+                                super::delegate_api::complete_pending_request(&list_key, response.clone())
+                            }
+                            // Signing key management responses
+                            OrderDelegateResponseMsg::StoreSigningKeyResponse { room_key, .. } => {
+                                super::delegate_api::complete_pending_signing_key_request(
+                                    room_key,
+                                    response.clone(),
+                                )
+                            }
+                            OrderDelegateResponseMsg::GetPublicKeyResponse { room_key, .. } => {
+                                super::delegate_api::complete_pending_public_key_request(
+                                    room_key,
+                                    response.clone(),
+                                )
+                            }
+                            // Signing response - use both room_key and request_id for correlation
+                            OrderDelegateResponseMsg::SignResponse {
+                                room_key,
+                                request_id,
+                                ..
+                            } => super::delegate_api::complete_pending_sign_request(
+                                room_key,
+                                *request_id,
+                                response.clone(),
+                            ),
+                        };
+
+                        if completed {
+                            info!("Completed pending delegate request");
+                        }
+
+                        // Process the response based on its type for logging/state updates
+                        match response {
+                            OrderDelegateResponseMsg::GetResponse { key, value } => {
+                                info!(
+                                    "Got value for key: {:?}, value present: {}",
+                                    String::from_utf8_lossy(key.as_bytes()),
+                                    value.is_some()
+                                );
+                            }
+                            OrderDelegateResponseMsg::ListResponse { keys } => {
+                                info!("Listed {} keys", keys.len());
+                            }
+                            OrderDelegateResponseMsg::StoreResponse { key, result, .. } => {
+                                match result {
+                                    Ok(_) => info!(
+                                        "Successfully stored key: {:?}",
+                                        String::from_utf8_lossy(key.as_bytes())
+                                    ),
+                                    Err(e) => warn!(
+                                        "Failed to store key: {:?}, error: {}",
+                                        String::from_utf8_lossy(key.as_bytes()),
+                                        e
+                                    ),
+                                }
+                            }
+                            OrderDelegateResponseMsg::DeleteResponse { key, result } => {
+                                match result {
+                                    Ok(_) => info!(
+                                        "Successfully deleted key: {:?}",
+                                        String::from_utf8_lossy(key.as_bytes())
+                                    ),
+                                    Err(e) => warn!(
+                                        "Failed to delete key: {:?}, error: {}",
+                                        String::from_utf8_lossy(key.as_bytes()),
+                                        e
+                                    ),
+                                }
+                            }
+                            // Signing key management responses
+                            OrderDelegateResponseMsg::StoreSigningKeyResponse { room_key, result } => {
+                                match result {
+                                    Ok(_) => info!("Stored signing key for room: {:?}", room_key),
+                                    Err(e) => warn!("Failed to store signing key: {}", e),
+                                }
+                            }
+                            OrderDelegateResponseMsg::GetPublicKeyResponse { room_key, public_key } => {
+                                info!(
+                                    "Got public key for room {:?}: present={}",
+                                    room_key,
+                                    public_key.is_some()
+                                );
+                            }
+                            OrderDelegateResponseMsg::SignResponse {
+                                room_key,
+                                signature,
+                                ..
+                            } => match signature {
+                                Ok(_) => info!("Got signature for room: {:?}", room_key),
+                                Err(e) => warn!("Failed to sign for room {:?}: {}", room_key, e),
+                            },
+                        }
+                    }
+                    Err(e) => {
+                        warn!("Failed to deserialize delegate response: {}", e);
+                    }
+                }
+            }
+            _ => {
+                warn!("Unhandled delegate response type: {:?}", v);
+            }
+        }
     }
 }
 

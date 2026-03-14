@@ -8,6 +8,7 @@ mod components;
 mod services;
 mod util;
 
+#[allow(unused_imports)]
 use dioxus::prelude::*;
 use std::rc::Rc;
 
