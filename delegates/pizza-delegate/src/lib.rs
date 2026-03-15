@@ -80,9 +80,7 @@ impl DelegateInterface for PizzaDelegate {
             | InboundDelegateMsg::SubscribeContractResponse(_)
             | InboundDelegateMsg::ContractNotification(_)
             | InboundDelegateMsg::DelegateMessage(_) => {
-                logging::info(&format!(
-                    "Received unexpected message type: {message_type}"
-                ));
+                logging::info(&format!("Received unexpected message type: {message_type}"));
                 Err(DelegateError::Other(format!(
                     "unexpected message type: {message_type}"
                 )))

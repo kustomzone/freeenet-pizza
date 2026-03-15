@@ -44,7 +44,8 @@ fn build_wasm(project_root: &PathBuf, package: &str, subdir: &str, wasm_name: &s
     let build_dir = target_dir.join("build");
 
     // Create build directory if it doesn't exist
-    fs::create_dir_all(&build_dir).expect(&format!("Failed to create build directory for {}", package));
+    fs::create_dir_all(&build_dir)
+        .expect(&format!("Failed to create build directory for {}", package));
 
     // Build the WASM using cargo
     let status = Command::new("cargo")
@@ -69,7 +70,8 @@ fn build_wasm(project_root: &PathBuf, package: &str, subdir: &str, wasm_name: &s
             println!("cargo:warning={} built at {:?}", package, wasm_src);
 
             if wasm_src.exists() {
-                fs::copy(&wasm_src, &wasm_dst).expect(&format!("Failed to copy {} WASM file", package));
+                fs::copy(&wasm_src, &wasm_dst)
+                    .expect(&format!("Failed to copy {} WASM file", package));
                 println!(
                     "cargo:warning={} WASM built successfully at {:?}",
                     package, wasm_dst

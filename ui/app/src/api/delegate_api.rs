@@ -59,7 +59,10 @@ pub fn complete_pending_public_key_request(response: PizzaDelegateResponse) -> b
 }
 
 /// Complete a pending sign request.
-pub fn complete_pending_sign_request(request_id: RequestId, response: PizzaDelegateResponse) -> bool {
+pub fn complete_pending_sign_request(
+    request_id: RequestId,
+    response: PizzaDelegateResponse,
+) -> bool {
     let mut key_bytes = SIGN_PREFIX.to_vec();
     key_bytes.extend_from_slice(&request_id.to_le_bytes());
     complete_pending_request_bytes(&key_bytes, response)
