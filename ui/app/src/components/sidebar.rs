@@ -1,6 +1,6 @@
 use crate::api::{ConnectionStatus, CONNECTION_STATUS};
 use crate::app::{Contract, Route};
-use crate::util::format_utc_as_full_datetime;
+use crate::util::{format_build_time_local, format_utc_as_full_datetime};
 use dioxus::prelude::*;
 use ed25519_dalek::SigningKey;
 use pizza_common::order_state::ItemContentV1;
@@ -189,9 +189,13 @@ pub fn Sidebar(
                 class: "sidebar-footer",
                 Link {
                     to: Route::AboutPageRoute {},
-                    class: "sidebar-about-link",
+                    class: "sidebar-link",
                     onclick: move |_| sidebar_open.set(false),
                     "About"
+                }
+                div {
+                    class: "sidebar-link",
+                    "Built: {format_build_time_local()}"
                 }
                 button {
                     class: "btn btn-primary btn-full-width",

@@ -170,7 +170,7 @@ body {
     opacity: 0.8;
 }
 
-.sidebar-about-link {
+.sidebar-link {
     display: block;
     text-align: center;
     margin-bottom: 12px;
@@ -188,7 +188,7 @@ body {
     transition: color 0.2s;
 }
 
-.sidebar-about-link:hover {
+.sidebar-link:hover {
     color: rgba(255, 255, 255, 0.9);
 }
 

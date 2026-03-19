@@ -3,12 +3,14 @@
 //! This script compiles the pizza-contract and pizza-delegate to WASM and places
 //! them in locations where the UI can include them at compile time.
 
+use chrono::Utc;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
 fn main() {
+    generate_build_info();
     // Tell Cargo to rerun this build script if the contract or delegate source changes
     println!("cargo:rerun-if-changed=../../contracts/pizza-contract/");
     println!("cargo:rerun-if-changed=../../delegates/pizza-delegate/");
@@ -96,4 +98,18 @@ fn build_wasm(project_root: &PathBuf, package: &str, subdir: &str, wasm_name: &s
             );
         }
     }
+}
+
+fn generate_build_info() {
+    // Get the current UTC date and time
+    let now = Utc::now();
+    // Use ISO 8601 format (UTC) e.g., "2023-10-27T10:30:00Z"
+    // This is easily parseable by JavaScript's Date object.
+    let build_timestamp_iso = now.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+
+    // Set the BUILD_TIMESTAMP_ISO environment variable for the main crate compilation
+    println!(
+        "cargo:rustc-env=BUILD_TIMESTAMP_ISO={}",
+        build_timestamp_iso
+    );
 }
