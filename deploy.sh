@@ -2,4 +2,4 @@
 
 set -euxo pipefail
 
-nix develop -c cargo run --bin deploy-tool deploy
+nix develop -c deploy-tool deploy
